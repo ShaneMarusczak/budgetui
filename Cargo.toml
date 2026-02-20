@@ -1,0 +1,34 @@
+[package]
+name = "budgetui"
+version = "0.1.0"
+edition = "2021"
+description = "BudgeTUI - A local-only, privacy-first personal finance tracker for the terminal"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 'z'
+codegen-units = 1
+strip = true
+debug = false
+incremental = false
+
+[lints.clippy]
+panic = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+
+[dependencies]
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.28", default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+csv = { version = "1.3", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+anyhow = "1"
+rust_decimal = { version = "1.36", default-features = false, features = ["std"] }
+regex = { version = "1", default-features = false, features = ["std"] }
+directories = { version = "5", default-features = false }
+
+[dev-dependencies]
+rust_decimal_macros = "1.36"
+tempfile = "3"
