@@ -381,9 +381,19 @@ fn render_complete(f: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled(&app.status_message, theme::normal_style())),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Enter ", Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Enter ",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("to finish  ", theme::dim_style()),
-            Span::styled("i ", Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "i ",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("import another file", theme::dim_style()),
         ]),
     ])
