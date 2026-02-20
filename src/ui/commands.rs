@@ -407,9 +407,10 @@ fn cmd_budget(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
                 return Ok(());
             }
         };
-        let budget_month = app.current_month.clone().unwrap_or_else(|| {
-            chrono::Local::now().format("%Y-%m").to_string()
-        });
+        let budget_month = app
+            .current_month
+            .clone()
+            .unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
         let budget = Budget::new(cat_id, budget_month.clone(), amount);
         db.upsert_budget(&budget)?;
         app.refresh_budgets(db)?;
@@ -678,10 +679,7 @@ fn cmd_delete_txn(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Res
 fn cmd_export(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
     let path = if args.is_empty() {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        let suffix = app
-            .current_month
-            .as_deref()
-            .unwrap_or("all");
+        let suffix = app.current_month.as_deref().unwrap_or("all");
         format!("{home}/budgetui-export-{suffix}.csv")
     } else {
         crate::run::shellexpand(args)
@@ -782,4 +780,3 @@ fn advance_month(app: &mut App, db: &mut Database, delta: i32) -> anyhow::Result
 
     Ok(())
 }
-

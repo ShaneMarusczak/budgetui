@@ -17,11 +17,11 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .spacing(1)
         .constraints([
-            Constraint::Length(5),  // Debit accounts row
-            Constraint::Length(5),  // Credit accounts row
-            Constraint::Length(3),  // Net worth
+            Constraint::Length(5), // Debit accounts row
+            Constraint::Length(5), // Credit accounts row
+            Constraint::Length(3), // Net worth
             Constraint::Min(8),    // Spending by category
-            Constraint::Length(5),  // Monthly trend
+            Constraint::Length(5), // Monthly trend
         ])
         .split(area);
 
@@ -227,7 +227,11 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
     // Use 2 rows per category (bar + blank) when space allows, else 1
     let rows_per = if count > 0 {
         let natural = inner_rows / count;
-        if natural >= 2 { natural } else { 1 }
+        if natural >= 2 {
+            natural
+        } else {
+            1
+        }
     } else {
         1
     };
@@ -362,9 +366,7 @@ fn render_trend_chart(f: &mut Frame, area: Rect, app: &App) {
 
 /// Parse "YYYY-MM" into single-letter month label.
 fn parse_month_label(month_str: &str) -> &'static str {
-    const MONTHS: [&str; 12] = [
-        "J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D",
-    ];
+    const MONTHS: [&str; 12] = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
     month_str
         .get(5..7)
         .and_then(|m| m.parse::<usize>().ok())

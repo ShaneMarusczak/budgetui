@@ -441,8 +441,7 @@ impl Database {
     // ── Budgets ───────────────────────────────────────────────
 
     pub(crate) fn get_budgets(&self, month: Option<&str>) -> Result<Vec<Budget>> {
-        let mut sql =
-            String::from("SELECT id, category_id, month, limit_amount FROM budgets");
+        let mut sql = String::from("SELECT id, category_id, month, limit_amount FROM budgets");
         let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         if let Some(m) = month {
             let ph = push_param(&mut p, Box::new(m.to_string()));
@@ -558,7 +557,9 @@ impl Database {
                 sql.push_str(&format!(" AND date LIKE {ph}"));
             }
             let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
-            let val: String = self.conn.query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+            let val: String = self
+                .conn
+                .query_row(&sql, refs.as_slice(), |row| row.get(0))?;
             Ok(parse_decimal(&val))
         };
         Ok((query_sum(">")?, query_sum("<")?))
@@ -651,7 +652,9 @@ impl Database {
                 sql.push_str(&format!(" AND date LIKE {ph}"));
             }
             let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
-            let val: String = self.conn.query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+            let val: String = self
+                .conn
+                .query_row(&sql, refs.as_slice(), |row| row.get(0))?;
             Ok(parse_decimal(&val))
         };
         Ok((query_sum(">")?, query_sum("<")?))
@@ -692,11 +695,7 @@ impl Database {
     }
 
     /// Export transactions to a CSV file. Returns the number of transactions written.
-    pub(crate) fn export_to_csv(
-        &self,
-        path: &str,
-        month: Option<&str>,
-    ) -> Result<usize> {
+    pub(crate) fn export_to_csv(&self, path: &str, month: Option<&str>) -> Result<usize> {
         let txns = self.get_all_transactions_for_export(month)?;
         if txns.is_empty() {
             return Ok(0);
@@ -705,9 +704,15 @@ impl Database {
         let categories = self.get_categories()?;
         let accounts = self.get_accounts()?;
 
-        let mut wtr =
-            csv::Writer::from_path(path).context("Failed to create export file")?;
-        wtr.write_record(["Date", "Description", "Amount", "Category", "Account", "Notes"])?;
+        let mut wtr = csv::Writer::from_path(path).context("Failed to create export file")?;
+        wtr.write_record([
+            "Date",
+            "Description",
+            "Amount",
+            "Category",
+            "Account",
+            "Notes",
+        ])?;
 
         for txn in &txns {
             let cat_name = txn

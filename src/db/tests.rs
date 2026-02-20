@@ -941,7 +941,9 @@ fn test_account_monthly_totals() {
     assert_eq!(expenses, dec!(-5.25));
 
     // Credit: charge -45, payment +45
-    let (inc, exp) = db.get_account_monthly_totals(credit_id, Some("2024-01")).unwrap();
+    let (inc, exp) = db
+        .get_account_monthly_totals(credit_id, Some("2024-01"))
+        .unwrap();
     assert_eq!(inc, dec!(45.00));
     assert_eq!(exp, dec!(-45.00));
 }
