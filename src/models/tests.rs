@@ -130,7 +130,6 @@ fn test_category_new() {
     let cat = Category::new("Food".into());
     assert!(cat.id.is_none());
     assert_eq!(cat.name, "Food");
-    assert!(cat.parent_id.is_none());
     assert!(cat.icon.is_empty());
     assert!(cat.color.is_empty());
 }

@@ -84,63 +84,52 @@ impl Database {
             return Ok(());
         }
 
-        let defaults = vec![
-            ("Income", None::<&str>),
-            ("Salary", Some("Income")),
-            ("Freelance", Some("Income")),
-            ("Interest", Some("Income")),
-            ("Housing", None),
-            ("Rent/Mortgage", Some("Housing")),
-            ("Utilities", Some("Housing")),
-            ("Insurance", Some("Housing")),
-            ("Food & Dining", None),
-            ("Groceries", Some("Food & Dining")),
-            ("Restaurants", Some("Food & Dining")),
-            ("Coffee Shops", Some("Food & Dining")),
-            ("Transportation", None),
-            ("Gas & Fuel", Some("Transportation")),
-            ("Parking", Some("Transportation")),
-            ("Public Transit", Some("Transportation")),
-            ("Ride Share", Some("Transportation")),
-            ("Shopping", None),
-            ("Clothing", Some("Shopping")),
-            ("Electronics", Some("Shopping")),
-            ("Home & Garden", Some("Shopping")),
-            ("Health & Fitness", None),
-            ("Gym", Some("Health & Fitness")),
-            ("Pharmacy", Some("Health & Fitness")),
-            ("Doctor", Some("Health & Fitness")),
-            ("Entertainment", None),
-            ("Streaming", Some("Entertainment")),
-            ("Movies & Shows", Some("Entertainment")),
-            ("Games", Some("Entertainment")),
-            ("Travel", None),
-            ("Hotels", Some("Travel")),
-            ("Flights", Some("Travel")),
-            ("Personal Care", None),
-            ("Education", None),
-            ("Gifts & Donations", None),
-            ("Bills & Subscriptions", None),
-            ("Fees & Charges", None),
-            ("Transfer", None),
-            ("Uncategorized", None),
+        let defaults = [
+            "Bills & Subscriptions",
+            "Clothing",
+            "Coffee Shops",
+            "Doctor",
+            "Education",
+            "Electronics",
+            "Entertainment",
+            "Fees & Charges",
+            "Flights",
+            "Food & Dining",
+            "Freelance",
+            "Games",
+            "Gas & Fuel",
+            "Gifts & Donations",
+            "Groceries",
+            "Gym",
+            "Health & Fitness",
+            "Home & Garden",
+            "Hotels",
+            "Housing",
+            "Income",
+            "Insurance",
+            "Interest",
+            "Movies & Shows",
+            "Parking",
+            "Personal Care",
+            "Pharmacy",
+            "Public Transit",
+            "Rent/Mortgage",
+            "Restaurants",
+            "Ride Share",
+            "Shopping",
+            "Streaming",
+            "Transfer",
+            "Transportation",
+            "Travel",
+            "Uncategorized",
+            "Utilities",
         ];
 
         let tx = self.conn.transaction()?;
-        for (name, parent_name) in &defaults {
-            let parent_id: Option<i64> = if let Some(pname) = parent_name {
-                tx.query_row(
-                    "SELECT id FROM categories WHERE name = ?1",
-                    params![pname],
-                    |row| row.get(0),
-                )
-                .ok()
-            } else {
-                None
-            };
+        for name in &defaults {
             tx.execute(
-                "INSERT OR IGNORE INTO categories (name, parent_id, icon, color) VALUES (?1, ?2, '', '')",
-                params![name, parent_id],
+                "INSERT OR IGNORE INTO categories (name, icon, color) VALUES (?1, '', '')",
+                params![name],
             )?;
         }
         tx.commit()?;
@@ -422,14 +411,13 @@ impl Database {
     pub(crate) fn get_categories(&self) -> Result<Vec<Category>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, name, parent_id, icon, color FROM categories ORDER BY name")?;
+            .prepare("SELECT id, name, icon, color FROM categories ORDER BY name")?;
         let rows = stmt.query_map([], |row| {
             Ok(Category {
                 id: Some(row.get(0)?),
                 name: row.get(1)?,
-                parent_id: row.get(2)?,
-                icon: row.get(3)?,
-                color: row.get(4)?,
+                icon: row.get(2)?,
+                color: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -437,15 +425,14 @@ impl Database {
 
     pub(crate) fn get_category_by_id(&self, id: i64) -> Result<Option<Category>> {
         let result = self.conn.query_row(
-            "SELECT id, name, parent_id, icon, color FROM categories WHERE id = ?1",
+            "SELECT id, name, icon, color FROM categories WHERE id = ?1",
             params![id],
             |row| {
                 Ok(Category {
                     id: Some(row.get(0)?),
                     name: row.get(1)?,
-                    parent_id: row.get(2)?,
-                    icon: row.get(3)?,
-                    color: row.get(4)?,
+                    icon: row.get(2)?,
+                    color: row.get(3)?,
                 })
             },
         );
@@ -458,8 +445,8 @@ impl Database {
 
     pub(crate) fn insert_category(&self, cat: &Category) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO categories (name, parent_id, icon, color) VALUES (?1, ?2, ?3, ?4)",
-            params![cat.name, cat.parent_id, cat.icon, cat.color],
+            "INSERT INTO categories (name, icon, color) VALUES (?1, ?2, ?3)",
+            params![cat.name, cat.icon, cat.color],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -579,6 +566,115 @@ impl Database {
         let total: String = self.conn.query_row(
             "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions",
             [],
+            |row| row.get(0),
+        )?;
+        Ok(Decimal::from_str(&total).unwrap_or_default())
+    }
+
+    /// Monthly income/expenses filtered by account type(s).
+    pub(crate) fn get_monthly_totals_by_account_type(
+        &self,
+        month: &str,
+        account_types: &[&str],
+    ) -> Result<(Decimal, Decimal)> {
+        let placeholders: String = (0..account_types.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let income_sql = format!(
+            "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
+             FROM transactions t JOIN accounts a ON t.account_id = a.id
+             WHERE t.date LIKE ?1 AND CAST(t.amount AS REAL) > 0
+               AND a.account_type IN ({placeholders})"
+        );
+        let expenses_sql = format!(
+            "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
+             FROM transactions t JOIN accounts a ON t.account_id = a.id
+             WHERE t.date LIKE ?1 AND CAST(t.amount AS REAL) < 0
+               AND a.account_type IN ({placeholders})"
+        );
+
+        let month_pat = format!("{month}%");
+
+        let mut p1: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        p1.push(Box::new(month_pat.clone()));
+        for at in account_types {
+            p1.push(Box::new(at.to_string()));
+        }
+        let r1: Vec<&dyn rusqlite::types::ToSql> = p1.iter().map(|p| p.as_ref()).collect();
+        let income: String = self
+            .conn
+            .query_row(&income_sql, r1.as_slice(), |row| row.get(0))?;
+
+        let mut p2: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        p2.push(Box::new(month_pat));
+        for at in account_types {
+            p2.push(Box::new(at.to_string()));
+        }
+        let r2: Vec<&dyn rusqlite::types::ToSql> = p2.iter().map(|p| p.as_ref()).collect();
+        let expenses: String = self
+            .conn
+            .query_row(&expenses_sql, r2.as_slice(), |row| row.get(0))?;
+
+        Ok((
+            Decimal::from_str(&income).unwrap_or_default(),
+            Decimal::from_str(&expenses).unwrap_or_default(),
+        ))
+    }
+
+    /// All-time balance for accounts of the given type(s).
+    pub(crate) fn get_balance_by_account_type(&self, account_types: &[&str]) -> Result<Decimal> {
+        let placeholders: String = (0..account_types.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
+             FROM transactions t JOIN accounts a ON t.account_id = a.id
+             WHERE a.account_type IN ({placeholders})"
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for at in account_types {
+            params.push(Box::new(at.to_string()));
+        }
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let total: String = self
+            .conn
+            .query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+        Ok(Decimal::from_str(&total).unwrap_or_default())
+    }
+
+    /// Monthly income/expenses for a single account.
+    pub(crate) fn get_account_monthly_totals(
+        &self,
+        account_id: i64,
+        month: &str,
+    ) -> Result<(Decimal, Decimal)> {
+        let month_pat = format!("{month}%");
+        let income: String = self.conn.query_row(
+            "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions
+             WHERE account_id = ?1 AND date LIKE ?2 AND CAST(amount AS REAL) > 0",
+            params![account_id, month_pat],
+            |row| row.get(0),
+        )?;
+        let expenses: String = self.conn.query_row(
+            "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions
+             WHERE account_id = ?1 AND date LIKE ?2 AND CAST(amount AS REAL) < 0",
+            params![account_id, month_pat],
+            |row| row.get(0),
+        )?;
+        Ok((
+            Decimal::from_str(&income).unwrap_or_default(),
+            Decimal::from_str(&expenses).unwrap_or_default(),
+        ))
+    }
+
+    /// All-time balance for a single account.
+    pub(crate) fn get_account_balance(&self, account_id: i64) -> Result<Decimal> {
+        let total: String = self.conn.query_row(
+            "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions WHERE account_id = ?1",
+            params![account_id],
             |row| row.get(0),
         )?;
         Ok(Decimal::from_str(&total).unwrap_or_default())

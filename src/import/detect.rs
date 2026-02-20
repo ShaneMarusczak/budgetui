@@ -22,6 +22,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: false,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         });
     }
 
@@ -38,6 +39,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: true, // AmEx inverts: charges positive, payments negative
+            is_credit_account: true,
         });
     }
 
@@ -54,6 +56,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: true,
         });
     }
 
@@ -70,6 +73,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         });
     }
 
@@ -86,6 +90,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         });
     }
 
@@ -105,6 +110,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: true,
         });
     }
 
@@ -121,6 +127,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: true,
         });
     }
 
@@ -139,6 +146,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         });
     }
 
@@ -157,6 +165,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: true,
         });
     }
 
@@ -173,6 +182,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         });
     }
 
@@ -192,6 +202,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: true,
         });
     }
 

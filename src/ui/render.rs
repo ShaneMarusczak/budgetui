@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -14,58 +14,108 @@ pub(crate) fn render(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Tab bar
+            Constraint::Length(1), // Hint bar
             Constraint::Min(5),    // Main content
             Constraint::Length(1), // Status bar
             Constraint::Length(1), // Command bar
         ])
         .split(f.area());
 
-    render_tab_bar(f, chunks[0], app);
+    render_hint_bar(f, chunks[0], app);
     render_screen(f, chunks[1], app);
     render_status_bar(f, chunks[2], app);
     render_command_bar(f, chunks[3], app);
 
-    if app.show_help {
+    if app.show_nav {
+        render_nav_overlay(f, f.area(), app);
+    } else if app.show_help {
         render_help_overlay(f, f.area());
     }
 }
 
-fn render_tab_bar(f: &mut Frame, area: Rect, app: &App) {
-    let titles: Vec<Line> = Screen::all()
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let num = format!("{}", i + 1);
-            if *s == app.screen {
-                Line::from(vec![
-                    Span::styled(format!("{num}:"), Style::default().fg(theme::TEXT_DIM)),
-                    Span::styled(
-                        format!("{s}"),
-                        Style::default()
-                            .fg(theme::ACCENT)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            } else {
-                Line::from(Span::styled(
-                    format!("{num}:{s}"),
-                    Style::default().fg(theme::TEXT_DIM),
-                ))
-            }
-        })
-        .collect();
+fn render_hint_bar(f: &mut Frame, area: Rect, app: &App) {
+    let screen_name = format!(" {}", app.screen);
+    let hint = " :nav │ 1-6 │ Tab ";
 
-    let tabs = Tabs::new(titles)
-        .divider(Span::styled(" | ", Style::default().fg(theme::OVERLAY)))
-        .style(Style::default().bg(theme::HEADER_BG));
+    let available = area.width as usize;
+    let pad = available.saturating_sub(screen_name.len() + hint.len());
 
-    f.render_widget(tabs, area);
+    let bar = Paragraph::new(Line::from(vec![
+        Span::styled(
+            screen_name,
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ".repeat(pad), Style::default()),
+        Span::styled(hint, Style::default().fg(theme::TEXT_DIM)),
+    ]))
+    .style(Style::default().bg(theme::HEADER_BG));
+
+    f.render_widget(bar, area);
+}
+
+fn render_nav_overlay(f: &mut Frame, area: Rect, app: &App) {
+    let screens = Screen::all();
+    let aliases = [":d", "", ":t", ":i", ":c", ":b"];
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    for (i, screen) in screens.iter().enumerate() {
+        let num = format!("{}", i + 1);
+        let name = format!("{screen}");
+        let alias = aliases.get(i).copied().unwrap_or("");
+        let entry = format!("  {num}  {name:<16} {alias:>4}  ");
+
+        let style = if i == app.nav_index {
+            Style::default()
+                .fg(theme::HEADER_BG)
+                .bg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD)
+        } else if *screen == app.screen {
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::TEXT)
+        };
+
+        lines.push(Line::from(Span::styled(entry, style)));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  1-6 jump │ Enter go │ Esc close  ",
+        Style::default().fg(theme::TEXT_DIM),
+    )));
+
+    let popup_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let popup_width = 38.min(area.width.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    f.render_widget(Clear, popup_area);
+    let nav = Paragraph::new(lines).block(
+        Block::default()
+            .title(Span::styled(
+                " Navigate ",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::ACCENT))
+            .style(Style::default().bg(theme::HEADER_BG)),
+    );
+    f.render_widget(nav, popup_area);
 }
 
 fn render_screen(f: &mut Frame, area: Rect, app: &App) {
     match app.screen {
         Screen::Dashboard => super::screens::dashboard::render(f, area, app),
+        Screen::Accounts => super::screens::accounts::render(f, area, app),
         Screen::Transactions => {
             let cat_lookup: Vec<(i64, String)> = app
                 .categories
@@ -115,11 +165,14 @@ fn render_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
     let right = match app.screen {
         Screen::Dashboard => " H/L month | n/p account | ? help ",
+        Screen::Accounts => " j/k navigate | Enter view txns | ? help ",
         Screen::Transactions => " D delete | /search | :recat | ? help ",
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => " j/k navigate | Enter select | Esc back ",
-            ImportStep::MapColumns => " +/- adjust | Enter preview | Esc back ",
+            ImportStep::MapColumns => " +/- adjust | Enter next | Esc back ",
+            ImportStep::SelectAccount => " j/k navigate | Enter select | n new | Esc back ",
             ImportStep::Preview => " Enter import | Esc back ",
+            ImportStep::Categorize => " j/k pick | Enter assign | s skip | S skip all | n new ",
             ImportStep::Complete => " Enter view txns | :d dashboard ",
         },
         Screen::Categories => " r toggle rules | :rule add | ? help ",
@@ -217,11 +270,11 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            "  j/k or Up/Down   Move cursor           1-5        Switch tabs",
+            "  j/k or Up/Down   Move cursor           1-6        Switch screens",
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  Tab/Shift-Tab    Cycle tabs            g/G        Top/Bottom",
+            "  Tab/Shift-Tab    Cycle screens         g/G        Top/Bottom",
             theme::normal_style(),
         )),
         Line::from(Span::styled(
@@ -229,7 +282,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  n/p (Dashboard)  Cycle accounts        Ctrl-q     Quit",
+            "  :nav             Screen navigator       Ctrl-q     Quit",
             theme::normal_style(),
         )),
         Line::from(""),
@@ -245,6 +298,10 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
         )),
         Line::from(Span::styled(
             "  D (Transactions) Delete transaction    r (Categories) Toggle rules",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  n/p (Dashboard)  Cycle accounts",
             theme::normal_style(),
         )),
         Line::from(Span::styled(

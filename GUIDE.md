@@ -11,11 +11,11 @@ BudgeTUI has a headless CLI mode for scripting, automation pipelines, and quick 
 ### Import
 
 ```bash
-budgetui import ~/Downloads/statement.csv
 budgetui import statement.csv --account "Chase Checking"
+budgetui import ~/Downloads/statement.csv --account "Amex Gold"
 ```
 
-The importer auto-detects bank format from CSV headers (same 11+ bank formats supported in the TUI wizard). Transactions are deduplicated by hash, auto-categorized against your existing rules, and inserted. Output goes to stdout:
+The `--account` flag specifies which account to import into (required when you have more than one account). The importer auto-detects bank format from CSV headers (same 11+ bank formats supported in the TUI wizard). Transactions are deduplicated by hash, auto-categorized against your existing rules, and inserted. Output goes to stdout:
 
 ```
 Detected format: Chase Credit Card
@@ -82,13 +82,13 @@ done
 
 When you first launch BudgeTUI, you'll see the Dashboard with a default checking account already created. The status bar at the bottom shows your current mode, screen, month, and context-sensitive keybinding hints.
 
-The interface has five screens, accessible via the numbered tab bar at the top:
+The interface has six screens. The hint bar at the top shows your current screen name and how to navigate:
 
 ```
-1:Dashboard | 2:Transactions | 3:Import | 4:Categories | 5:Budgets
+ Dashboard                              :nav │ 1-6 │ Tab
 ```
 
-Press `1`-`5`, `Tab`/`Shift-Tab`, or use commands like `:d`, `:t`, `:i`, `:c`, `:b` to switch between them.
+Press `1`-`6` to jump to a screen by number, `Tab`/`Shift-Tab` to cycle, or type `:nav` to open an interactive screen navigator popup. You can also use commands like `:d`, `:accounts`, `:t`, `:i`, `:c`, `:b`.
 
 ---
 
@@ -140,7 +140,42 @@ A sparkline showing total expenses per month over the last 12 months. Gives a qu
 
 ---
 
-## Screen 2: Transactions
+## Screen 2: Accounts
+
+The Accounts screen shows a snapshot card for each account with monthly totals and all-time balance.
+
+### Account Cards
+
+Each account renders as a card:
+
+```
+┌─ Chase Checking (Checking) ─────────────────────┐
+│  Income: $3,000.00    Expenses: $450.25          │
+│  Balance: $12,540.75                             │
+└──────────────────────────────────────────────────┘
+```
+
+For credit card and loan accounts, labels change to "Payments" and "Charges" instead of "Income" and "Expenses."
+
+The selected card is highlighted with an accent-colored border. Balance is green when positive, red when negative.
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move between account cards |
+| `g` / `G` | Jump to first / last account |
+| `Ctrl-d` / `Ctrl-u` | Page down / up |
+| `Enter` | Drill into account — switches to Transactions filtered by this account |
+| `Esc` (in Transactions) | Clear account filter and show all transactions |
+
+### Empty State
+
+When no accounts exist, the screen shows guidance on how to create one with `:account <name> [type]` or by importing a CSV.
+
+---
+
+## Screen 3: Transactions
 
 A table view of all transactions for the current month.
 
@@ -194,12 +229,12 @@ When there are no transactions for the current month, the screen shows helpful g
 
 ---
 
-## Screen 3: Import
+## Screen 4: Import
 
-A 4-step wizard for importing bank CSV files. A step indicator bar at the top shows your progress:
+A 6-step wizard for importing bank CSV files. A step indicator bar at the top shows your progress:
 
 ```
- 1:File  >  2:Map  >  3:Preview  >  4:Done
+ 1:File  >  2:Map  >  3:Account  >  4:Preview  >  5:Categorize  >  6:Done
 ```
 
 Completed steps show in green, the current step is highlighted, and future steps are dimmed.
@@ -232,7 +267,6 @@ After selecting a file, BudgeTUI attempts to auto-detect your bank's format. If 
 | Credit Column | Credit amounts column (optional) |
 | Date Format | Cycle through common formats: `%m/%d/%Y`, `%Y-%m-%d`, etc. |
 | Has Header | Whether the first row is a header |
-| Negate Amounts | Flip the sign of all amounts |
 
 | Key | Action |
 |-----|--------|
@@ -243,16 +277,60 @@ After selecting a file, BudgeTUI attempts to auto-detect your bank's format. If 
 
 A sample data table at the bottom shows the first 5 rows with column indices (`[0] Date`, `[1] Description`, etc.) so you can see which column is which.
 
-### Step 3: Preview
+### Step 3: Select Account
+
+Choose which account this import belongs to, or create a new one inline.
+
+```
+┌─ Select Account ──────────────────────────────────┐
+│  Detected: Chase Credit Card                      │
+│  Suggested type: Credit Card                      │
+└───────────────────────────────────────────────────┘
+┌─ j/k navigate | Enter select | n new ────────────┐
+│  > Chase Sapphire (Credit Card)                   │
+│    Chase Freedom (Credit Card)                    │
+│    Wells Fargo Checking (Checking)                │
+└───────────────────────────────────────────────────┘
+```
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Navigate accounts |
+| `g` / `G` | Jump to first / last |
+| `Enter` | Select highlighted account and advance to Preview |
+| `n` | Create a new account (opens inline form) |
+| `Esc` | Go back to column mapping |
+
+**Creating a new account** (press `n`):
+- Type the account name
+- Use `+`/`-` or `Tab` to cycle through account types (Checking, Savings, Credit Card, etc.)
+- Press `Enter` to create and select it
+- Press `Esc` to cancel
+
+The account type determines how amounts are handled — Credit Card and Loan accounts automatically negate amounts for correct sign treatment.
+
+### Step 4: Preview
 
 Shows a preview of the parsed transactions (up to 50 rows) with Date, Description, and Amount columns. Income amounts are green, expenses are red.
 
 | Key | Action |
 |-----|--------|
 | `Enter` | Confirm and import (with confirmation dialog) |
-| `Esc` | Go back to column mapping |
+| `Esc` | Go back to account selection |
 
-### Step 4: Complete
+### Step 5: Categorize
+
+After importing, uncategorized transactions are presented one by one for manual categorization. Pick an existing category or create new ones.
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Navigate category list |
+| `Enter` | Assign selected category |
+| `s` | Skip this transaction |
+| `S` | Skip all remaining uncategorized |
+| `n` | Create a new category |
+
+### Step 6: Complete
 
 Shows the import result: how many transactions were imported, how many duplicates were skipped, and any suggested categorization rules for uncategorized transactions.
 
@@ -284,13 +362,13 @@ For any other format, map the columns manually in Step 2.
 
 ---
 
-## Screen 4: Categories
+## Screen 5: Categories
 
-A split-panel view with the category tree on the left and categorization rules on the right.
+A split-panel view with the category list on the left and categorization rules on the right.
 
-### Category Tree (Left Panel)
+### Category List (Left Panel)
 
-Shows all categories. Top-level categories are bold and blue. Subcategories are indented with a `└` prefix.
+Shows all categories with bold, blue styling.
 
 Navigate with `j`/`k`. The active panel has a blue border; the inactive panel has a dim border.
 
@@ -298,14 +376,13 @@ Navigate with `j`/`k`. The active panel has a blue border; the inactive panel ha
 
 Shows all auto-categorization rules with columns: Pattern, Category, Type (contains or regex).
 
-Press `r` to toggle focus between the category tree and the rules table.
+Press `r` to toggle focus between the category list and the rules table.
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `:category Groceries` | Create a top-level category |
-| `:subcategory Groceries Supermarket` | Create "Supermarket" under "Groceries" |
+| `:category Groceries` | Create a category |
 | `:rule amazon Shopping` | Auto-categorize transactions containing "amazon" as "Shopping" |
 | `:regex-rule ^SQ \* Coffee` | Auto-categorize Square transactions matching regex as "Coffee" |
 | `:delete-rule` | Delete the selected rule (with confirmation) |
@@ -322,7 +399,7 @@ After import, the status bar suggests rules for uncategorized transactions.
 
 ---
 
-## Screen 5: Budgets
+## Screen 6: Budgets
 
 View and manage monthly spending budgets.
 
@@ -357,7 +434,7 @@ When no budgets are set, the screen shows instructions on how to create one.
 
 ## Accounts
 
-BudgeTUI supports multiple accounts for organizing transactions.
+BudgeTUI supports multiple accounts for organizing transactions. Accounts can be created via the `:account` command or inline during the import wizard (Step 3: Select Account).
 
 ### Account Types
 
@@ -365,10 +442,11 @@ BudgeTUI supports multiple accounts for organizing transactions.
 |------|-------------|
 | Checking | Bank checking accounts |
 | Savings | Savings accounts |
-| Credit | Credit cards |
+| Credit Card | Credit cards |
 | Investment | Brokerage, retirement accounts |
 | Cash | Cash on hand |
 | Loan | Mortgages, auto loans, student loans |
+| Other | Anything else |
 
 ### Commands
 
@@ -377,11 +455,13 @@ BudgeTUI supports multiple accounts for organizing transactions.
 | `:account Chase Checking` | Create an account named "Chase" with type Checking |
 | `:account Amex Credit` | Create a credit card account |
 | `:account MyBank` | Create with default type (Checking) |
-| `:accounts` | List all accounts in the status bar |
+| `:accounts` | Go to the Accounts tab |
 | `:filter-account Chase` | Show only transactions from "Chase" |
 | `:filter-account` | Clear filter, show all transactions |
 
-On the Dashboard, press `n`/`p` to cycle through accounts (shown in status bar).
+### Viewing Accounts
+
+The Accounts tab (Screen 2) shows per-account snapshot cards with monthly income/expenses and all-time balance. Press `Enter` on a card to drill into that account's transactions. On the Dashboard, press `n`/`p` to cycle through accounts.
 
 ---
 
@@ -440,8 +520,8 @@ Format: `:add-txn <date> <description> <amount>`
 
 | Key | Action |
 |-----|--------|
-| `1`-`5` | Switch to screen by number |
-| `Tab` / `Shift-Tab` | Cycle tabs |
+| `1`-`6` | Switch to screen by number |
+| `Tab` / `Shift-Tab` | Cycle screens |
 | `j` / `k` | Move down / up |
 | `g` / `G` | Top / bottom |
 | `Ctrl-d` / `Ctrl-u` | Half-page down / up |
@@ -457,9 +537,12 @@ Format: `:add-txn <date> <description> <amount>`
 | Screen | Key | Action |
 |--------|-----|--------|
 | Dashboard | `n` / `p` | Cycle accounts |
+| Accounts | `Enter` | Drill into account's transactions |
 | Transactions | `D` | Delete transaction |
+| Transactions | `Esc` | Clear account filter (when filtered) |
 | Categories | `r` | Toggle category/rules focus |
 | Import | `+` / `-` | Adjust column mapping value |
+| Import | `n` | Create new account (in account picker) |
 | Import | `Enter` | Advance to next step |
 | Import | `Esc` | Go back one step |
 
@@ -482,20 +565,20 @@ Format: `:add-txn <date> <description> <amount>`
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `:dashboard` | `:d` | Go to Dashboard |
+| `:accounts` | | Go to Accounts |
 | `:transactions` | `:t` | Go to Transactions |
 | `:import` | `:i` | Go to Import |
 | `:categories` | `:c` | Go to Categories |
 | `:budgets` | `:b` | Go to Budgets |
+| `:nav` | | Open screen navigator |
 | `:help` | `:h` | Show help overlay |
 | `:quit` | `:q` | Quit |
 | `:month YYYY-MM` | `:m` | Set month |
 | `:next-month` | | Next month |
 | `:prev-month` | | Previous month |
 | `:account <name> [type]` | `:a` | Create account |
-| `:accounts` | | List accounts |
 | `:filter-account <name>` | `:fa` | Filter by account |
 | `:category <name>` | | Create category |
-| `:subcategory <parent> <child>` | `:sub` | Create subcategory |
 | `:rule <pattern> <category>` | `:r` | Add contains rule |
 | `:regex-rule <pattern> <category>` | | Add regex rule |
 | `:delete-rule` | | Delete selected rule |
@@ -524,7 +607,7 @@ The database uses WAL (Write-Ahead Logging) mode for safe concurrent reads and f
 ### Schema
 
 - **accounts** — id, name, type, institution, currency, notes
-- **categories** — id, name, parent_id (for hierarchy), icon, color
+- **categories** — id, name, parent_id, icon, color
 - **transactions** — id, account_id, date, description, original_description, amount, category_id, notes, is_transfer, import_hash
 - **budgets** — id, category_id, month, limit_amount (unique per category+month)
 - **import_rules** — id, pattern, category_id, is_regex, priority
@@ -543,7 +626,7 @@ To back up your data, simply copy the database file. To reset, delete it and Bud
 
 - **Month shortcuts**: Instead of typing `:month 2024-03`, just type `:m 3` to jump to March of the current year.
 
-- **Fast screen switching**: Use `1`-`5` instead of `:dashboard`, `:transactions`, etc.
+- **Fast screen switching**: Use `1`-`6` instead of `:dashboard`, `:accounts`, `:transactions`, etc.
 
 - **Search then act**: Use `/` to find a transaction, then `D` to delete it or `:recat` to re-categorize. The search is live, so results update as you type.
 

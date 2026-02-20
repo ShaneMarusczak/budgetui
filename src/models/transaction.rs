@@ -20,6 +20,7 @@ impl Transaction {
         self.amount > Decimal::ZERO
     }
 
+    #[cfg(test)]
     pub fn is_expense(&self) -> bool {
         self.amount < Decimal::ZERO
     }

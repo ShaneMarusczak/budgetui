@@ -62,7 +62,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
         .iter()
         .enumerate()
         .skip(app.transaction_scroll)
-        .take(app.visible_rows)
+        .take(area.height.saturating_sub(3) as usize)
         .map(|(i, txn)| {
             let cat_name = txn
                 .category_id

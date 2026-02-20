@@ -288,25 +288,40 @@ fn test_parse_empty_rows() {
 
 #[test]
 fn test_hash_deterministic() {
-    let h1 = compute_hash("2024-01-15", "Coffee", &dec!(-4.50));
-    let h2 = compute_hash("2024-01-15", "Coffee", &dec!(-4.50));
+    let h1 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
+    let h2 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
     assert_eq!(h1, h2);
 }
 
 #[test]
 fn test_hash_different_inputs() {
-    let h1 = compute_hash("2024-01-15", "Coffee", &dec!(-4.50));
-    let h2 = compute_hash("2024-01-15", "Tea", &dec!(-4.50));
-    let h3 = compute_hash("2024-01-16", "Coffee", &dec!(-4.50));
-    let h4 = compute_hash("2024-01-15", "Coffee", &dec!(-5.00));
+    let h1 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
+    let h2 = compute_hash(1, 0, "2024-01-15", "Tea", &dec!(-4.50));
+    let h3 = compute_hash(1, 0, "2024-01-16", "Coffee", &dec!(-4.50));
+    let h4 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-5.00));
     assert_ne!(h1, h2);
     assert_ne!(h1, h3);
     assert_ne!(h1, h4);
 }
 
 #[test]
+fn test_hash_different_rows_same_data() {
+    // Two identical transactions at different row positions should get different hashes
+    let h1 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
+    let h2 = compute_hash(1, 1, "2024-01-15", "Coffee", &dec!(-4.50));
+    assert_ne!(h1, h2);
+}
+
+#[test]
+fn test_hash_different_accounts_same_data() {
+    let h1 = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
+    let h2 = compute_hash(2, 0, "2024-01-15", "Coffee", &dec!(-4.50));
+    assert_ne!(h1, h2);
+}
+
+#[test]
 fn test_hash_format() {
-    let h = compute_hash("2024-01-15", "Coffee", &dec!(-4.50));
+    let h = compute_hash(1, 0, "2024-01-15", "Coffee", &dec!(-4.50));
     // Should be 16 hex chars
     assert_eq!(h.len(), 16);
     assert!(h.chars().all(|c| c.is_ascii_hexdigit()));

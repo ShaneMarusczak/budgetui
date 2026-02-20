@@ -24,20 +24,6 @@ fn test_default_categories_not_reseeded() {
     assert_eq!(count_before, count_after);
 }
 
-#[test]
-fn test_subcategory_parent_id() {
-    let db = Database::open_in_memory().unwrap();
-    let cats = db.get_categories().unwrap();
-    let food = cats.iter().find(|c| c.name == "Food & Dining").unwrap();
-
-    // Check that subcategories have the right parent
-    let groceries = cats.iter().find(|c| c.name == "Groceries").unwrap();
-    assert_eq!(groceries.parent_id, food.id);
-
-    // Top-level categories have no parent
-    assert!(food.parent_id.is_none());
-}
-
 // ── Account CRUD ──────────────────────────────────────────────
 
 #[test]
@@ -770,6 +756,204 @@ fn test_double_migrate_idempotent() {
         })
         .unwrap();
     assert_eq!(version, schema::CURRENT_VERSION);
+}
+
+// ── Account-type-filtered analytics ───────────────────────────
+
+fn setup_multi_account_data(db: &mut Database) -> (i64, i64) {
+    let checking = Account::new(
+        "Chase Checking".into(),
+        AccountType::Checking,
+        String::new(),
+    );
+    let credit = Account::new("Chase Visa".into(), AccountType::CreditCard, String::new());
+    let checking_id = db.insert_account(&checking).unwrap();
+    let credit_id = db.insert_account(&credit).unwrap();
+
+    // Checking transactions: salary +3000, coffee -5.25
+    db.insert_transaction(&Transaction {
+        id: None,
+        account_id: checking_id,
+        date: "2024-01-15".into(),
+        description: "Salary".into(),
+        original_description: "ACME PAYROLL".into(),
+        amount: dec!(3000.00),
+        category_id: None,
+        notes: String::new(),
+        is_transfer: false,
+        import_hash: "chk-1".into(),
+        created_at: String::new(),
+    })
+    .unwrap();
+    db.insert_transaction(&Transaction {
+        id: None,
+        account_id: checking_id,
+        date: "2024-01-18".into(),
+        description: "Coffee".into(),
+        original_description: "STARBUCKS".into(),
+        amount: dec!(-5.25),
+        category_id: None,
+        notes: String::new(),
+        is_transfer: false,
+        import_hash: "chk-2".into(),
+        created_at: String::new(),
+    })
+    .unwrap();
+
+    // Credit card transactions: charge -45.00, payment +45.00
+    db.insert_transaction(&Transaction {
+        id: None,
+        account_id: credit_id,
+        date: "2024-01-10".into(),
+        description: "Amazon".into(),
+        original_description: "AMZN MKTP".into(),
+        amount: dec!(-45.00),
+        category_id: None,
+        notes: String::new(),
+        is_transfer: false,
+        import_hash: "cc-1".into(),
+        created_at: String::new(),
+    })
+    .unwrap();
+    db.insert_transaction(&Transaction {
+        id: None,
+        account_id: credit_id,
+        date: "2024-01-20".into(),
+        description: "Payment".into(),
+        original_description: "PAYMENT THANK YOU".into(),
+        amount: dec!(45.00),
+        category_id: None,
+        notes: String::new(),
+        is_transfer: false,
+        import_hash: "cc-2".into(),
+        created_at: String::new(),
+    })
+    .unwrap();
+
+    (checking_id, credit_id)
+}
+
+#[test]
+fn test_monthly_totals_by_account_type_debit() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_multi_account_data(&mut db);
+
+    let debit_types = &["Checking", "Savings", "Cash", "Investment", "Other"];
+    let (income, expenses) = db
+        .get_monthly_totals_by_account_type("2024-01", debit_types)
+        .unwrap();
+    assert_eq!(income, dec!(3000.00));
+    assert_eq!(expenses, dec!(-5.25));
+}
+
+#[test]
+fn test_monthly_totals_by_account_type_credit() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_multi_account_data(&mut db);
+
+    let credit_types = &["Credit Card", "Loan"];
+    let (income, expenses) = db
+        .get_monthly_totals_by_account_type("2024-01", credit_types)
+        .unwrap();
+    // Credit card: payment +45 is "income" (positive), charge -45 is "expense"
+    assert_eq!(income, dec!(45.00));
+    assert_eq!(expenses, dec!(-45.00));
+}
+
+#[test]
+fn test_monthly_totals_by_account_type_empty_month() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_multi_account_data(&mut db);
+
+    let (income, expenses) = db
+        .get_monthly_totals_by_account_type("2099-01", &["Checking"])
+        .unwrap();
+    assert_eq!(income, Decimal::ZERO);
+    assert_eq!(expenses, Decimal::ZERO);
+}
+
+#[test]
+fn test_balance_by_account_type_debit() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_multi_account_data(&mut db);
+
+    let debit_types = &["Checking", "Savings", "Cash", "Investment", "Other"];
+    let balance = db.get_balance_by_account_type(debit_types).unwrap();
+    // 3000.00 - 5.25 = 2994.75
+    assert_eq!(balance, dec!(2994.75));
+}
+
+#[test]
+fn test_balance_by_account_type_credit() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_multi_account_data(&mut db);
+
+    let credit_types = &["Credit Card", "Loan"];
+    let balance = db.get_balance_by_account_type(credit_types).unwrap();
+    // -45.00 + 45.00 = 0.00
+    assert_eq!(balance, Decimal::ZERO);
+}
+
+#[test]
+fn test_balance_by_account_type_no_matching_accounts() {
+    let db = Database::open_in_memory().unwrap();
+    let balance = db.get_balance_by_account_type(&["Loan"]).unwrap();
+    assert_eq!(balance, Decimal::ZERO);
+}
+
+// ── Per-account queries ───────────────────────────────────────
+
+#[test]
+fn test_account_monthly_totals() {
+    let mut db = Database::open_in_memory().unwrap();
+    let (checking_id, credit_id) = setup_multi_account_data(&mut db);
+
+    // Checking: salary +3000, coffee -5.25
+    let (income, expenses) = db
+        .get_account_monthly_totals(checking_id, "2024-01")
+        .unwrap();
+    assert_eq!(income, dec!(3000.00));
+    assert_eq!(expenses, dec!(-5.25));
+
+    // Credit: charge -45, payment +45
+    let (inc, exp) = db.get_account_monthly_totals(credit_id, "2024-01").unwrap();
+    assert_eq!(inc, dec!(45.00));
+    assert_eq!(exp, dec!(-45.00));
+}
+
+#[test]
+fn test_account_balance() {
+    let mut db = Database::open_in_memory().unwrap();
+    let (checking_id, credit_id) = setup_multi_account_data(&mut db);
+
+    // Checking: 3000 - 5.25 = 2994.75
+    let bal = db.get_account_balance(checking_id).unwrap();
+    assert_eq!(bal, dec!(2994.75));
+
+    // Credit: -45 + 45 = 0
+    let bal = db.get_account_balance(credit_id).unwrap();
+    assert_eq!(bal, Decimal::ZERO);
+}
+
+#[test]
+fn test_account_balance_empty() {
+    let db = Database::open_in_memory().unwrap();
+    let acct = Account::new("Empty".into(), AccountType::Savings, String::new());
+    let id = db.insert_account(&acct).unwrap();
+    let bal = db.get_account_balance(id).unwrap();
+    assert_eq!(bal, Decimal::ZERO);
+}
+
+#[test]
+fn test_account_monthly_totals_empty_month() {
+    let mut db = Database::open_in_memory().unwrap();
+    let (checking_id, _) = setup_multi_account_data(&mut db);
+
+    let (income, expenses) = db
+        .get_account_monthly_totals(checking_id, "2099-01")
+        .unwrap();
+    assert_eq!(income, Decimal::ZERO);
+    assert_eq!(expenses, Decimal::ZERO);
 }
 
 // ── Decimal precision ─────────────────────────────────────────

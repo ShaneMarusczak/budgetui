@@ -17,6 +17,7 @@ fn test_detect_wells_fargo() {
     assert!(!profile.has_header);
     assert_eq!(profile.description_column, 4);
     assert_eq!(profile.amount_column, Some(1));
+    assert!(!profile.is_credit_account);
 }
 
 #[test]
@@ -26,6 +27,7 @@ fn test_detect_amex() {
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "American Express");
     assert!(profile.negate_amounts);
+    assert!(profile.is_credit_account);
 }
 
 #[test]
@@ -40,6 +42,7 @@ fn test_detect_boa_credit() {
     let first_row = h(&["01/15/2024", "12345", "Coffee Shop", "123 Main St", "-4.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Bank of America Credit Card");
+    assert!(profile.is_credit_account);
 }
 
 #[test]
@@ -48,6 +51,7 @@ fn test_detect_boa_checking() {
     let first_row = h(&["01/15/2024", "Coffee Shop", "-4.50", "995.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Bank of America Checking");
+    assert!(!profile.is_credit_account);
 }
 
 #[test]
@@ -62,6 +66,7 @@ fn test_detect_usaa() {
     let first_row = h(&["01/15/2024", "Coffee", "COFFEE SHOP #123", "Food", "-4.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "USAA");
+    assert!(!profile.is_credit_account);
 }
 
 #[test]
@@ -73,6 +78,7 @@ fn test_detect_citi() {
     assert!(profile.amount_column.is_none());
     assert!(profile.debit_column.is_some());
     assert!(profile.credit_column.is_some());
+    assert!(profile.is_credit_account);
 }
 
 #[test]
@@ -98,6 +104,7 @@ fn test_detect_capital_one_credit() {
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Capital One Credit Card");
     assert_eq!(profile.date_format, "%Y-%m-%d");
+    assert!(profile.is_credit_account);
 }
 
 #[test]
@@ -113,6 +120,7 @@ fn test_detect_capital_one_checking() {
     let first_row = h(&["1234", "01/15/2024", "-4.50", "Debit", "Coffee", "995.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Capital One Checking");
+    assert!(!profile.is_credit_account);
 }
 
 #[test]
@@ -127,6 +135,7 @@ fn test_detect_discover() {
     let first_row = h(&["01/15/2024", "01/16/2024", "Coffee", "-4.50", "Food"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Discover");
+    assert!(profile.is_credit_account);
 }
 
 #[test]
@@ -151,6 +160,7 @@ fn test_detect_chase_checking() {
     ]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Chase Checking");
+    assert!(!profile.is_credit_account);
 }
 
 #[test]
@@ -175,6 +185,7 @@ fn test_detect_chase_credit() {
     ]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Chase Credit Card");
+    assert!(profile.is_credit_account);
 }
 
 #[test]

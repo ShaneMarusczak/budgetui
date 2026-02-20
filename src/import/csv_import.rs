@@ -18,6 +18,7 @@ pub(crate) struct CsvProfile {
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
     pub(crate) negate_amounts: bool,
+    pub(crate) is_credit_account: bool,
 }
 
 impl Default for CsvProfile {
@@ -33,6 +34,7 @@ impl Default for CsvProfile {
             has_header: true,
             skip_rows: 0,
             negate_amounts: false,
+            is_credit_account: false,
         }
     }
 }
@@ -110,7 +112,7 @@ impl CsvImporter {
             let amount = parse_amount(row, profile)
                 .with_context(|| format!("Row {}: failed to parse amount", i + 1))?;
 
-            let hash = compute_hash(&date_str, &description, &amount);
+            let hash = compute_hash(account_id, i, &date_str, &description, &amount);
 
             transactions.push(Transaction {
                 id: None,
@@ -197,10 +199,18 @@ fn parse_decimal(s: &str) -> Result<Decimal> {
 }
 
 /// Compute a stable, deterministic hash for deduplication.
-/// Uses FNV-1a (32-bit) which is simple, fast, and stable across Rust versions,
+/// Uses FNV-1a (64-bit) which is simple, fast, and stable across Rust versions,
 /// unlike DefaultHasher which can change between releases.
-fn compute_hash(date: &str, description: &str, amount: &Decimal) -> String {
-    let input = format!("{date}|{description}|{amount}");
+/// Includes account_id and row index so duplicate-looking transactions
+/// (same date/description/amount) at different CSV rows are preserved.
+fn compute_hash(
+    account_id: i64,
+    row_index: usize,
+    date: &str,
+    description: &str,
+    amount: &Decimal,
+) -> String {
+    let input = format!("{account_id}|{row_index}|{date}|{description}|{amount}");
     let hash = fnv1a(input.as_bytes());
     format!("{hash:016x}")
 }

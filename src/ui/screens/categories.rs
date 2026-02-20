@@ -20,33 +20,21 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
-    // Build tree structure with viewport scrolling
+    let cat_rows = area.height.saturating_sub(2) as usize; // minus borders
     let items: Vec<ListItem> = app
         .categories
         .iter()
         .enumerate()
         .skip(app.category_scroll)
-        .take(app.visible_rows)
+        .take(cat_rows)
         .map(|(i, cat)| {
-            let prefix = if cat.parent_id.is_some() {
-                "  └ "
-            } else {
-                ""
-            };
             let style = if i == app.category_index {
                 theme::selected_style()
-            } else if cat.parent_id.is_none() {
-                Style::default()
-                    .fg(theme::ACCENT)
-                    .add_modifier(Modifier::BOLD)
             } else {
                 theme::normal_style()
             };
 
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{}", cat.name),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(&cat.name, style)))
         })
         .collect();
 
@@ -124,12 +112,13 @@ fn render_rules_list(f: &mut Frame, area: Rect, app: &App) {
         .map(|h| Cell::from(*h).style(theme::header_style()));
     let header = Row::new(header_cells).height(1);
 
+    let rule_rows = area.height.saturating_sub(3) as usize; // minus borders + header
     let rows: Vec<Row> = app
         .import_rules
         .iter()
         .enumerate()
         .skip(app.rule_scroll)
-        .take(app.visible_rows)
+        .take(rule_rows)
         .map(|(i, rule)| {
             let cat_name = app
                 .categories

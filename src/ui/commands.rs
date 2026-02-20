@@ -107,7 +107,7 @@ pub(crate) static COMMANDS: LazyLock<HashMap<&str, Command>> = LazyLock::new(|| 
     );
     register_command!("rename", "Rename selected transaction", cmd_rename, r);
     register_command!("recat", "Re-categorize selected transaction", cmd_recat, r);
-    register_command!("accounts", "List all accounts", cmd_accounts, r);
+    register_command!("accounts", "Go to Accounts", cmd_accounts, r);
     register_command!(
         "add-txn",
         "Add manual transaction (e.g. :add-txn 2024-01-15 Coffee -4.50)",
@@ -127,18 +127,6 @@ pub(crate) static COMMANDS: LazyLock<HashMap<&str, Command>> = LazyLock::new(|| 
         r
     );
     register_command!(
-        "subcategory",
-        "Create subcategory (e.g. :subcategory Housing Rent)",
-        cmd_subcategory,
-        r
-    );
-    register_command!(
-        "sub",
-        "Create subcategory (e.g. :sub Housing Rent)",
-        cmd_subcategory,
-        r
-    );
-    register_command!(
         "filter-account",
         "Filter transactions by account (e.g. :filter-account Chase)",
         cmd_filter_account,
@@ -152,6 +140,7 @@ pub(crate) static COMMANDS: LazyLock<HashMap<&str, Command>> = LazyLock::new(|| 
     );
     register_command!("next-month", "Go to next month", cmd_next_month, r);
     register_command!("prev-month", "Go to previous month", cmd_prev_month, r);
+    register_command!("nav", "Open screen navigator", cmd_nav, r);
 
     r
 });
@@ -241,6 +230,15 @@ fn cmd_budgets(_args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<
 
 fn cmd_help(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Result<()> {
     app.show_help = true;
+    Ok(())
+}
+
+fn cmd_nav(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Result<()> {
+    app.nav_index = Screen::all()
+        .iter()
+        .position(|s| *s == app.screen)
+        .unwrap_or(0);
+    app.show_nav = true;
     Ok(())
 }
 
@@ -578,21 +576,8 @@ fn cmd_recat(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()>
 }
 
 fn cmd_accounts(_args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
-    app.refresh_accounts(db)?;
-    if app.accounts.is_empty() {
-        app.set_status("No accounts. Create one with :account <name> [type]");
-    } else {
-        let list: Vec<String> = app
-            .accounts
-            .iter()
-            .enumerate()
-            .map(|(i, a)| {
-                let marker = if i == app.account_index { ">" } else { " " };
-                format!("{marker}{}({})", a.name, a.account_type)
-            })
-            .collect();
-        app.set_status(format!("Accounts: {}", list.join(" | ")));
-    }
+    app.screen = Screen::Accounts;
+    app.refresh_accounts_tab(db)?;
     Ok(())
 }
 
@@ -736,47 +721,6 @@ fn cmd_export(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
 
     wtr.flush()?;
     app.set_status(format!("Exported {} transactions to {path}", txns.len()));
-    Ok(())
-}
-
-fn cmd_subcategory(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
-    if args.is_empty() {
-        app.set_status("Usage: :subcategory <parent_name> <child_name>");
-        return Ok(());
-    }
-
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    if parts.len() < 2 {
-        app.set_status("Usage: :subcategory <parent_name> <child_name>");
-        return Ok(());
-    }
-
-    let parent_name = parts[0];
-    let child_name = parts[1];
-
-    let categories = db.get_categories()?;
-    let parent = categories
-        .iter()
-        .find(|c| c.name.to_lowercase() == parent_name.to_lowercase());
-
-    if let Some(parent) = parent {
-        let cat = Category {
-            id: None,
-            name: child_name.to_string(),
-            parent_id: parent.id,
-            icon: String::new(),
-            color: String::new(),
-        };
-        db.insert_category(&cat)?;
-        app.refresh_categories(db)?;
-        app.set_status(format!(
-            "Created subcategory: {} > {child_name}",
-            parent.name
-        ));
-    } else {
-        app.set_status(format!("Parent category '{parent_name}' not found"));
-    }
-
     Ok(())
 }
 

@@ -8,17 +8,17 @@ BudgeTUI gives you full control over your financial data without ever sending it
 
 ## Features
 
-**Dashboard** — Monthly income/expense summary cards, spending-by-category bar chart, 12-month trend sparkline, and net worth at a glance.
+**Dashboard** — Monthly income/expense summary cards split by debit and credit accounts, spending-by-category bar chart, 12-month trend sparkline, and net worth at a glance.
+
+**Accounts** — Per-account snapshot cards showing monthly income/expenses and all-time balance. Press Enter to drill into an account's transactions. Credit accounts display "Charges/Payments" labels; debit accounts show "Income/Expenses." Supports 7 account types: Checking, Savings, Credit Card, Investment, Cash, Loan, and Other. Create accounts via `:account` command or inline during import.
 
 **Transactions** — Browse, search, filter by account or category, rename descriptions, re-categorize, and manually add or delete transactions. Export to CSV. Live search with match count. Alternating row backgrounds for readability.
 
-**CSV Import** — 4-step wizard with step indicator bar (Select File > Map Columns > Preview > Import). Automatic bank format detection for 11+ banks. Deduplication via stable FNV-1a hashing prevents re-importing the same transactions. Confirmation dialog before committing.
+**CSV Import** — 6-step wizard with step indicator bar (File > Map > Account > Preview > Categorize > Done). Automatic bank format detection for 11+ banks. Explicit account selection with inline account creation. Deduplication via stable FNV-1a hashing prevents re-importing the same transactions. Auto-categorization step for uncategorized transactions.
 
-**Categories** — Hierarchical category tree with parent/child relationships. Split-panel view with active panel highlighting. Create auto-categorization rules using simple pattern matching or full regex.
+**Categories** — Flat category list with split-panel view and active panel highlighting. Create auto-categorization rules using simple pattern matching or full regex.
 
 **Budgets** — Set monthly spending limits per category with color-coded progress bars (green < 70%, yellow 70-90%, red > 90%).
-
-**Accounts** — Multiple account types: Checking, Savings, Credit Card, Investment, Cash, Loan, and Other.
 
 **UX Polish** — Mode indicator in status bar (NORMAL/COMMAND/SEARCH/EDIT/CONFIRM). Context-sensitive keybinding hints that change per screen. Adaptive scrolling based on terminal height. Cursor display in input modes. Confirmation dialogs for all destructive actions. Empty states with helpful guidance on every screen.
 
@@ -94,12 +94,13 @@ budgetui --help
 
 | Key | Action |
 |-----|--------|
-| `1`-`5` | Switch screens (shown in tab bar) |
+| `1`-`6` | Switch screens |
+| `:nav` | Open screen navigator popup |
 | `j` / `k` | Move selection down / up |
 | `g` / `G` | Jump to top / bottom |
 | `Ctrl-d` / `Ctrl-u` | Page down / up (adaptive to terminal height) |
 | `H` / `L` | Previous / next month |
-| `Tab` / `Shift-Tab` | Cycle tabs forward / backward |
+| `Tab` / `Shift-Tab` | Cycle screens forward / backward |
 | `:` | Enter command mode |
 | `/` | Live search (shows match count) |
 | `?` | Show help overlay |
@@ -116,6 +117,7 @@ Type `:` to enter command mode, then any command below.
 | Command | Aliases | Description |
 |---------|---------|-------------|
 | `:dashboard` | `:d` | Go to dashboard |
+| `:accounts` | | Go to accounts |
 | `:transactions` | `:t` | Go to transactions |
 | `:import` | `:i` | Go to import wizard |
 | `:categories` | `:c` | Go to categories |
@@ -123,16 +125,15 @@ Type `:` to enter command mode, then any command below.
 | `:month YYYY-MM` | `:m` | Navigate to a specific month |
 | `:next-month` | | Go to next month |
 | `:prev-month` | | Go to previous month |
+| `:nav` | | Open screen navigator |
 | `:help` | `:h` | Show all commands |
 
 **Data Management**
 | Command | Description |
 |---------|-------------|
 | `:account <name> [type]` | Create an account (types: checking, savings, credit, investment, cash, loan) |
-| `:accounts` | List all accounts |
 | `:filter-account <name>` | Filter transactions by account |
-| `:category <name>` | Create a top-level category |
-| `:subcategory <parent> <child>` | Create a subcategory |
+| `:category <name>` | Create a category |
 | `:rule <pattern> <category>` | Add a contains-match categorization rule |
 | `:regex-rule <pattern> <category>` | Add a regex categorization rule |
 | `:delete-rule` | Delete the selected rule (with confirmation) |

@@ -22,7 +22,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, 
         .iter()
         .enumerate()
         .skip(app.budget_scroll)
-        .take(app.visible_rows)
+        .take(area.height.saturating_sub(2) as usize)
         .map(|(i, budget)| {
             let cat_name = app
                 .categories

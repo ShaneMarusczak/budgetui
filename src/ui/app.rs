@@ -9,6 +9,7 @@ use crate::models::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
     Dashboard,
+    Accounts,
     Transactions,
     Import,
     Categories,
@@ -19,6 +20,7 @@ impl Screen {
     pub(crate) fn all() -> &'static [Screen] {
         &[
             Self::Dashboard,
+            Self::Accounts,
             Self::Transactions,
             Self::Import,
             Self::Categories,
@@ -31,6 +33,7 @@ impl std::fmt::Display for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Dashboard => write!(f, "Dashboard"),
+            Self::Accounts => write!(f, "Accounts"),
             Self::Transactions => write!(f, "Transactions"),
             Self::Import => write!(f, "Import"),
             Self::Categories => write!(f, "Categories"),
@@ -73,7 +76,9 @@ pub(crate) enum PendingAction {
 pub(crate) enum ImportStep {
     SelectFile,
     MapColumns,
+    SelectAccount,
     Preview,
+    Categorize,
     Complete,
 }
 
@@ -82,10 +87,20 @@ impl std::fmt::Display for ImportStep {
         match self {
             Self::SelectFile => write!(f, "Select File"),
             Self::MapColumns => write!(f, "Map Columns"),
+            Self::SelectAccount => write!(f, "Select Account"),
             Self::Preview => write!(f, "Preview"),
+            Self::Categorize => write!(f, "Categorize"),
             Self::Complete => write!(f, "Complete"),
         }
     }
+}
+
+/// Per-account snapshot for the Accounts tab.
+pub(crate) struct AccountSnapshot {
+    pub(crate) account: Account,
+    pub(crate) month_income: rust_decimal::Decimal,
+    pub(crate) month_expenses: rust_decimal::Decimal,
+    pub(crate) balance: rust_decimal::Decimal,
 }
 
 pub(crate) struct App {
@@ -96,14 +111,26 @@ pub(crate) struct App {
     pub(crate) search_input: String,
     pub(crate) status_message: String,
     pub(crate) show_help: bool,
+    pub(crate) show_nav: bool,
+    pub(crate) nav_index: usize,
     pub(crate) current_month: String,
 
-    // Dashboard
+    // Dashboard — totals (all accounts)
     pub(crate) monthly_income: rust_decimal::Decimal,
     pub(crate) monthly_expenses: rust_decimal::Decimal,
     pub(crate) net_worth: rust_decimal::Decimal,
     pub(crate) spending_by_category: Vec<(String, rust_decimal::Decimal)>,
     pub(crate) monthly_trend: Vec<(String, rust_decimal::Decimal, rust_decimal::Decimal)>,
+
+    // Dashboard — debit accounts (Checking, Savings, Cash, Investment, Other)
+    pub(crate) debit_income: rust_decimal::Decimal,
+    pub(crate) debit_expenses: rust_decimal::Decimal,
+    pub(crate) debit_balance: rust_decimal::Decimal,
+
+    // Dashboard — credit accounts (CreditCard, Loan)
+    pub(crate) credit_charges: rust_decimal::Decimal,
+    pub(crate) credit_payments: rust_decimal::Decimal,
+    pub(crate) credit_balance: rust_decimal::Decimal,
 
     // Transactions
     pub(crate) transactions: Vec<Transaction>,
@@ -121,9 +148,12 @@ pub(crate) struct App {
     pub(crate) rule_scroll: usize,
     pub(crate) category_view_rules: bool,
 
-    // Accounts
+    // Accounts tab
     pub(crate) accounts: Vec<Account>,
     pub(crate) account_index: usize,
+    pub(crate) accounts_tab_index: usize,
+    pub(crate) accounts_tab_scroll: usize,
+    pub(crate) account_snapshots: Vec<AccountSnapshot>,
 
     // Budgets
     pub(crate) budgets: Vec<Budget>,
@@ -140,6 +170,21 @@ pub(crate) struct App {
     pub(crate) import_selected_field: usize,
     pub(crate) import_account_id: Option<i64>,
     pub(crate) import_detected_bank: Option<String>,
+
+    // Import account picker (SelectAccount step)
+    pub(crate) import_account_index: usize,
+    pub(crate) import_account_scroll: usize,
+    pub(crate) import_new_account_name: String,
+    pub(crate) import_new_account_type: usize, // index into AccountType::all()
+    pub(crate) import_creating_account: bool,
+
+    // Interactive categorization (import wizard)
+    pub(crate) import_cat_descriptions: Vec<(String, usize)>, // (description, count of matching txns)
+    pub(crate) import_cat_index: usize,                       // which description we're on
+    pub(crate) import_cat_selected: usize,                    // which category is highlighted
+    pub(crate) import_cat_scroll: usize,                      // category list viewport scroll
+    pub(crate) import_cat_new_name: String, // inline new-category input (empty = not typing)
+    pub(crate) import_cat_creating: bool,   // whether we're typing a new category name
 
     // File browser
     pub(crate) file_browser_path: PathBuf,
@@ -171,6 +216,8 @@ impl App {
             search_input: String::new(),
             status_message: String::new(),
             show_help: false,
+            show_nav: false,
+            nav_index: 0,
             current_month,
 
             monthly_income: rust_decimal::Decimal::ZERO,
@@ -178,6 +225,13 @@ impl App {
             net_worth: rust_decimal::Decimal::ZERO,
             spending_by_category: Vec::new(),
             monthly_trend: Vec::new(),
+
+            debit_income: rust_decimal::Decimal::ZERO,
+            debit_expenses: rust_decimal::Decimal::ZERO,
+            debit_balance: rust_decimal::Decimal::ZERO,
+            credit_charges: rust_decimal::Decimal::ZERO,
+            credit_payments: rust_decimal::Decimal::ZERO,
+            credit_balance: rust_decimal::Decimal::ZERO,
 
             transactions: Vec::new(),
             transaction_index: 0,
@@ -195,6 +249,9 @@ impl App {
 
             accounts: Vec::new(),
             account_index: 0,
+            accounts_tab_index: 0,
+            accounts_tab_scroll: 0,
+            account_snapshots: Vec::new(),
 
             budgets: Vec::new(),
             budget_index: 0,
@@ -209,6 +266,19 @@ impl App {
             import_selected_field: 0,
             import_account_id: None,
             import_detected_bank: None,
+
+            import_account_index: 0,
+            import_account_scroll: 0,
+            import_new_account_name: String::new(),
+            import_new_account_type: 0,
+            import_creating_account: false,
+
+            import_cat_descriptions: Vec::new(),
+            import_cat_index: 0,
+            import_cat_selected: 0,
+            import_cat_scroll: 0,
+            import_cat_new_name: String::new(),
+            import_cat_creating: false,
 
             file_browser_path: directories::UserDirs::new()
                 .map(|d| d.home_dir().to_path_buf())
@@ -235,6 +305,21 @@ impl App {
         self.spending_by_category = db.get_spending_by_category(&self.current_month)?;
         self.monthly_trend = db.get_monthly_trend(12)?;
         self.transaction_count = db.get_transaction_count()?;
+
+        // Debit accounts (Checking, Savings, Cash, Investment, Other)
+        let debit_types = &["Checking", "Savings", "Cash", "Investment", "Other"];
+        let (di, de) = db.get_monthly_totals_by_account_type(&self.current_month, debit_types)?;
+        self.debit_income = di;
+        self.debit_expenses = de;
+        self.debit_balance = db.get_balance_by_account_type(debit_types)?;
+
+        // Credit accounts (CreditCard, Loan)
+        let credit_types = &["Credit Card", "Loan"];
+        let (cp, cc) = db.get_monthly_totals_by_account_type(&self.current_month, credit_types)?;
+        self.credit_payments = cp; // positive = payments made to card
+        self.credit_charges = cc; // negative = charges/purchases
+        self.credit_balance = db.get_balance_by_account_type(credit_types)?;
+
         // Transactions are needed for dashboard card counts (income_count, expense_count)
         self.refresh_transactions(db)?;
         Ok(())
@@ -277,11 +362,30 @@ impl App {
         Ok(())
     }
 
+    pub(crate) fn refresh_accounts_tab(&mut self, db: &Database) -> Result<()> {
+        self.accounts = db.get_accounts()?;
+        let mut snapshots = Vec::with_capacity(self.accounts.len());
+        for account in &self.accounts {
+            let aid = account.id.unwrap_or(0);
+            let (income, expenses) = db.get_account_monthly_totals(aid, &self.current_month)?;
+            let balance = db.get_account_balance(aid)?;
+            snapshots.push(AccountSnapshot {
+                account: account.clone(),
+                month_income: income,
+                month_expenses: expenses,
+                balance,
+            });
+        }
+        self.account_snapshots = snapshots;
+        Ok(())
+    }
+
     pub(crate) fn refresh_all(&mut self, db: &Database) -> Result<()> {
         self.refresh_dashboard(db)?; // also refreshes transactions
         self.refresh_categories(db)?;
         self.refresh_budgets(db)?;
         self.refresh_accounts(db)?;
+        self.refresh_accounts_tab(db)?;
         Ok(())
     }
 
@@ -339,21 +443,18 @@ impl App {
                     (self.file_browser_show_hidden || !is_hidden(p))
                         && (p.is_dir()
                             || p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-                                matches!(
-                                    ext.to_ascii_lowercase().as_str(),
-                                    "csv" | "tsv" | "ofx" | "qfx" | "qif"
-                                )
+                                matches!(ext.to_ascii_lowercase().as_str(), "csv" | "tsv")
                             }))
                 })
                 .collect();
 
-            // Dirs first, then files, each sorted alphabetically
-            let mut dirs: Vec<PathBuf> = all.iter().filter(|p| p.is_dir()).cloned().collect();
+            // Files first (the things you want), dirs at the bottom (just for navigation)
             let mut files: Vec<PathBuf> = all.iter().filter(|p| !p.is_dir()).cloned().collect();
-            dirs.sort();
+            let mut dirs: Vec<PathBuf> = all.iter().filter(|p| p.is_dir()).cloned().collect();
             files.sort();
-            entries.extend(dirs);
+            dirs.sort();
             entries.extend(files);
+            entries.extend(dirs);
         }
 
         self.file_browser_entries = entries;
@@ -384,6 +485,108 @@ impl App {
             })
             .map(|(i, _)| i)
             .collect()
+    }
+
+    /// Collect unique uncategorized descriptions from import_preview and their counts.
+    /// Returns true if there are descriptions to categorize (step should be entered).
+    pub(crate) fn prepare_categorize_step(&mut self) -> bool {
+        use std::collections::HashMap;
+        // Count occurrences first
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        let mut order: Vec<String> = Vec::new();
+        for txn in &self.import_preview {
+            if txn.category_id.is_none() {
+                let entry = counts.entry(txn.original_description.clone()).or_insert(0);
+                if *entry == 0 {
+                    order.push(txn.original_description.clone());
+                }
+                *entry += 1;
+            }
+        }
+        self.import_cat_descriptions = order
+            .into_iter()
+            .map(|desc| {
+                let count = counts.get(&desc).copied().unwrap_or(1);
+                (desc, count)
+            })
+            .collect();
+        self.import_cat_index = 0;
+        self.import_cat_selected = 0;
+        self.import_cat_scroll = 0;
+        self.import_cat_new_name.clear();
+        self.import_cat_creating = false;
+        !self.import_cat_descriptions.is_empty()
+    }
+
+    /// Apply a category to the current description in the categorize step.
+    /// Sets category_id on all matching transactions in import_preview.
+    pub(crate) fn apply_category_to_current(&mut self, category_id: i64) {
+        if let Some((desc, _)) = self.import_cat_descriptions.get(self.import_cat_index) {
+            let desc = desc.clone();
+            for txn in &mut self.import_preview {
+                if txn.original_description == desc && txn.category_id.is_none() {
+                    txn.category_id = Some(category_id);
+                }
+            }
+        }
+    }
+
+    /// Advance to the next uncategorized description, or return false if done.
+    pub(crate) fn advance_categorize(&mut self) -> bool {
+        if self.import_cat_index + 1 < self.import_cat_descriptions.len() {
+            self.import_cat_index += 1;
+            self.import_cat_selected = 0;
+            self.import_cat_scroll = 0;
+            self.import_cat_creating = false;
+            self.import_cat_new_name.clear();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Effective visible rows for the transaction table (borders + header = 3).
+    pub(crate) fn transaction_page(&self) -> usize {
+        self.visible_rows.saturating_sub(3).max(1)
+    }
+
+    /// Effective visible rows for the file browser list.
+    /// Import step indicator (1) + path input box (3) + list borders (2) = 6.
+    pub(crate) fn file_browser_page(&self) -> usize {
+        self.visible_rows.saturating_sub(6).max(1)
+    }
+
+    /// Effective visible rows for the category list (borders = 2).
+    pub(crate) fn category_page(&self) -> usize {
+        self.visible_rows.saturating_sub(2).max(1)
+    }
+
+    /// Effective visible rows for the rules table (borders + header = 3).
+    pub(crate) fn rule_page(&self) -> usize {
+        self.visible_rows.saturating_sub(3).max(1)
+    }
+
+    /// Effective visible rows for the budget list (borders = 2).
+    pub(crate) fn budget_page(&self) -> usize {
+        self.visible_rows.saturating_sub(2).max(1)
+    }
+
+    /// Effective visible account cards. Each card is 4 rows high, plus 2 for borders on the outer block.
+    pub(crate) fn accounts_page(&self) -> usize {
+        // Each card is 4 lines. Outer block has no overhead since cards are direct.
+        (self.visible_rows / 4).max(1)
+    }
+
+    /// Effective visible rows for the import account picker.
+    /// Step indicator (1) + top info box (3) + list borders (2) = 6.
+    pub(crate) fn import_account_page(&self) -> usize {
+        self.visible_rows.saturating_sub(6).max(1)
+    }
+
+    /// Effective visible rows for the categorize category picker.
+    /// Import step indicator (1) + description block (5) + list borders (2) = 8.
+    pub(crate) fn categorize_visible_rows(&self) -> usize {
+        self.visible_rows.saturating_sub(8).max(1)
     }
 
     pub(crate) fn set_status(&mut self, msg: impl Into<String>) {
