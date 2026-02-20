@@ -1,13 +1,282 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::path::Path;
 
 use crate::db::Database;
 use crate::ui::app::{App, ImportStep, InputMode, Screen};
 use crate::ui::commands;
 
-pub(crate) fn run_app(
+// ── TUI mode ─────────────────────────────────────────────────
+
+pub(crate) fn as_tui(db: &mut Database) -> Result<()> {
+    let mut app = App::new();
+    app.refresh_all(db)?;
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let result = run_app(&mut terminal, &mut app, db);
+
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(ref e) = result {
+        eprintln!("Error: {e:?}");
+    }
+
+    result
+}
+
+// ── CLI mode ─────────────────────────────────────────────────
+
+pub(crate) fn as_cli(args: &[String], db: &mut Database) -> Result<()> {
+    match args[1].as_str() {
+        "import" => cli_import(&args[2..], db),
+        "export" => cli_export(&args[2..], db),
+        "summary" | "s" => cli_summary(&args[2..], db),
+        "accounts" => cli_accounts(db),
+        "--help" | "-h" | "help" => {
+            print_usage();
+            Ok(())
+        }
+        "--version" | "-V" | "version" => {
+            println!("budgetui {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
+        other => {
+            eprintln!("Unknown command: {other}");
+            eprintln!();
+            print_usage();
+            std::process::exit(1);
+        }
+    }
+}
+
+fn print_usage() {
+    println!("BudgeTUI — local-only personal finance tracker");
+    println!();
+    println!("Usage: budgetui [command]");
+    println!();
+    println!("Commands:");
+    println!("  (none)                        Launch interactive TUI");
+    println!("  import <file.csv>             Import a CSV file (auto-detects bank format)");
+    println!("    --account <name>            Account to import into (default: first account)");
+    println!("  export [path]                 Export transactions to CSV");
+    println!("    --month <YYYY-MM>           Month to export (default: current)");
+    println!("  summary [YYYY-MM]             Print monthly financial summary");
+    println!("  accounts                      List all accounts");
+    println!("  --help, -h                    Show this help");
+    println!("  --version, -V                 Show version");
+}
+
+fn cli_import(args: &[String], db: &mut Database) -> Result<()> {
+    if args.is_empty() {
+        eprintln!("Usage: budgetui import <file.csv> [--account <name>]");
+        std::process::exit(1);
+    }
+
+    let file_path = &args[0];
+    let path = Path::new(file_path);
+    if !path.exists() {
+        anyhow::bail!("File not found: {file_path}");
+    }
+
+    // Parse --account flag
+    let account_name = args
+        .windows(2)
+        .find(|w| w[0] == "--account")
+        .map(|w| w[1].as_str());
+
+    let account_id = if let Some(name) = account_name {
+        let accounts = db.get_accounts()?;
+        accounts
+            .iter()
+            .find(|a| a.name.to_lowercase() == name.to_lowercase())
+            .and_then(|a| a.id)
+            .ok_or_else(|| anyhow::anyhow!("Account '{name}' not found"))?
+    } else {
+        let accounts = db.get_accounts()?;
+        accounts
+            .first()
+            .and_then(|a| a.id)
+            .ok_or_else(|| anyhow::anyhow!("No accounts found"))?
+    };
+
+    // Load and parse CSV
+    let (headers, rows) = crate::import::CsvImporter::preview(path)?;
+    let first_row = rows.first().cloned().unwrap_or_default();
+
+    let profile = if let Some(detected) = crate::import::detect_bank_format(&headers, &first_row) {
+        println!("Detected format: {}", detected.name);
+        detected
+    } else {
+        println!("Using default CSV profile (date=0, desc=1, amount=2)");
+        crate::import::CsvProfile::default()
+    };
+
+    let mut txns = crate::import::CsvImporter::parse(&rows, &profile, account_id)?;
+    println!("Parsed {} transactions", txns.len());
+
+    // Auto-categorize
+    let rules = db.get_import_rules()?;
+    if !rules.is_empty() {
+        let categorizer = crate::categorize::Categorizer::new(&rules);
+        categorizer.categorize_batch(&mut txns);
+        let categorized = txns.iter().filter(|t| t.category_id.is_some()).count();
+        println!("Auto-categorized {categorized}/{} transactions", txns.len());
+    }
+
+    // Insert
+    let count = db.insert_transactions_batch(&txns)?;
+    let dupes = txns.len() - count;
+    println!("Imported {count} new transactions ({dupes} duplicates skipped)");
+
+    Ok(())
+}
+
+fn cli_export(args: &[String], db: &mut Database) -> Result<()> {
+    // Parse --month flag
+    let month = args
+        .windows(2)
+        .find(|w| w[0] == "--month")
+        .map(|w| w[1].clone())
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
+
+    // Output path is the first non-flag argument
+    let output_path = args
+        .first()
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| shellexpand(a))
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            format!("{home}/budgetui-export-{month}.csv")
+        });
+
+    let txns = db.get_all_transactions_for_export(Some(&month))?;
+    if txns.is_empty() {
+        println!("No transactions for {month}");
+        return Ok(());
+    }
+
+    let categories = db.get_categories()?;
+    let accounts = db.get_accounts()?;
+
+    let mut wtr = csv::Writer::from_path(&output_path).context("Failed to create export file")?;
+    wtr.write_record([
+        "Date",
+        "Description",
+        "Amount",
+        "Category",
+        "Account",
+        "Notes",
+    ])?;
+
+    for txn in &txns {
+        let cat_name = txn
+            .category_id
+            .and_then(|cid| categories.iter().find(|c| c.id == Some(cid)))
+            .map(|c| c.name.as_str())
+            .unwrap_or("");
+        let acct_name = accounts
+            .iter()
+            .find(|a| a.id == Some(txn.account_id))
+            .map(|a| a.name.as_str())
+            .unwrap_or("");
+        wtr.write_record([
+            &txn.date,
+            &txn.description,
+            &txn.amount.to_string(),
+            cat_name,
+            acct_name,
+            &txn.notes,
+        ])?;
+    }
+
+    wtr.flush()?;
+    println!("Exported {} transactions to {output_path}", txns.len());
+    Ok(())
+}
+
+fn cli_summary(args: &[String], db: &mut Database) -> Result<()> {
+    let month = args
+        .first()
+        .filter(|a| !a.starts_with('-'))
+        .cloned()
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
+
+    let (income, expenses) = db.get_monthly_totals(&month)?;
+    let net = income + expenses;
+    let net_worth = db.get_net_worth()?;
+    let spending = db.get_spending_by_category(&month)?;
+    let txn_count = db.get_transaction_count()?;
+
+    println!("BudgeTUI — {month}");
+    println!("{}", "─".repeat(40));
+    println!("  Income:     ${:.2}", income);
+    println!("  Expenses:   ${:.2}", expenses.abs());
+    println!("  Net:        ${:.2}", net);
+    println!("  Net Worth:  ${:.2}", net_worth);
+    println!("  Total Txns: {txn_count}");
+
+    if !spending.is_empty() {
+        println!();
+        println!("Spending by Category:");
+        for (name, amount) in &spending {
+            println!("  {name:<24} ${:.2}", amount.abs());
+        }
+    }
+
+    Ok(())
+}
+
+fn cli_accounts(db: &mut Database) -> Result<()> {
+    let accounts = db.get_accounts()?;
+    if accounts.is_empty() {
+        println!("No accounts");
+        return Ok(());
+    }
+
+    println!("{:<4} {:<20} {:<15} Institution", "ID", "Name", "Type");
+    println!("{}", "─".repeat(55));
+    for acct in &accounts {
+        println!(
+            "{:<4} {:<20} {:<15} {}",
+            acct.id.unwrap_or(0),
+            acct.name,
+            acct.account_type,
+            acct.institution,
+        );
+    }
+    Ok(())
+}
+
+fn shellexpand(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        format!("{home}/{rest}")
+    } else {
+        path.to_string()
+    }
+}
+
+// ── TUI event loop ───────────────────────────────────────────
+
+fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     db: &mut Database,
@@ -39,11 +308,7 @@ pub(crate) fn run_app(
 
 // ── Input handlers ───────────────────────────────────────────
 
-fn handle_normal_input(
-    key: event::KeyEvent,
-    app: &mut App,
-    db: &mut Database,
-) -> Result<()> {
+fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     match key.code {
         KeyCode::Char(':') => {
             app.input_mode = InputMode::Command;
@@ -72,11 +337,7 @@ fn handle_normal_input(
         KeyCode::BackTab => {
             let screens = Screen::all();
             let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
-            let prev = if idx == 0 {
-                screens.len() - 1
-            } else {
-                idx - 1
-            };
+            let prev = if idx == 0 { screens.len() - 1 } else { idx - 1 };
             switch_screen(app, db, screens[prev])?;
         }
         KeyCode::Enter => handle_enter(app, db)?,
@@ -135,11 +396,7 @@ fn handle_normal_input(
     Ok(())
 }
 
-fn handle_command_input(
-    key: event::KeyEvent,
-    app: &mut App,
-    db: &mut Database,
-) -> Result<()> {
+fn handle_command_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     match key.code {
         KeyCode::Enter => {
             let input = app.command_input.clone();
@@ -165,11 +422,7 @@ fn handle_command_input(
     Ok(())
 }
 
-fn handle_search_input(
-    key: event::KeyEvent,
-    app: &mut App,
-    db: &mut Database,
-) -> Result<()> {
+fn handle_search_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     match key.code {
         KeyCode::Enter => {
             app.input_mode = InputMode::Normal;
@@ -202,11 +455,7 @@ fn handle_search_input(
     Ok(())
 }
 
-fn handle_editing_input(
-    key: event::KeyEvent,
-    app: &mut App,
-    db: &mut Database,
-) -> Result<()> {
+fn handle_editing_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     match key.code {
         KeyCode::Enter => {
             let new_name = app.command_input.clone();
@@ -238,11 +487,7 @@ fn handle_editing_input(
     Ok(())
 }
 
-fn handle_confirm_input(
-    key: event::KeyEvent,
-    app: &mut App,
-    db: &mut Database,
-) -> Result<()> {
+fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             if let Some(action) = app.pending_action.take() {
@@ -262,16 +507,16 @@ fn handle_confirm_input(
                     PendingAction::DeleteBudget { id, name } => {
                         db.delete_budget(id)?;
                         app.refresh_budgets(db)?;
-                        if app.budget_index > 0 {
-                            app.budget_index -= 1;
+                        if app.budget_index >= app.budgets.len() {
+                            app.budget_index = app.budgets.len().saturating_sub(1);
                         }
                         app.set_status(format!("Deleted budget: {name}"));
                     }
                     PendingAction::DeleteRule { id, pattern } => {
                         db.delete_import_rule(id)?;
                         app.refresh_categories(db)?;
-                        if app.rule_index > 0 {
-                            app.rule_index -= 1;
+                        if app.rule_index >= app.import_rules.len() {
+                            app.rule_index = app.import_rules.len().saturating_sub(1);
                         }
                         app.set_status(format!("Deleted rule: '{pattern}'"));
                     }
@@ -289,9 +534,7 @@ fn handle_confirm_input(
                             .collect();
                         let suggestions: Vec<String> = uncategorized
                             .iter()
-                            .filter_map(|desc| {
-                                crate::categorize::suggest_rule(desc).ok()
-                            })
+                            .filter_map(|desc| crate::categorize::suggest_rule(desc).ok())
                             .collect();
 
                         let count = db.insert_transactions_batch(&txns)?;
@@ -424,7 +667,11 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
     if app.screen == Screen::Import {
         match app.import_step {
             ImportStep::SelectFile => {
-                if let Some(path) = app.file_browser_entries.get(app.file_browser_index).cloned() {
+                if let Some(path) = app
+                    .file_browser_entries
+                    .get(app.file_browser_index)
+                    .cloned()
+                {
                     if path.is_dir() {
                         app.file_browser_path = path;
                         app.refresh_file_browser();
@@ -448,12 +695,8 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
                 }
             }
             ImportStep::Preview => {
-                app.confirm_message = format!(
-                    "Import {} transactions?",
-                    app.import_preview.len()
-                );
-                app.pending_action =
-                    Some(crate::ui::app::PendingAction::ImportCommit);
+                app.confirm_message = format!("Import {} transactions?", app.import_preview.len());
+                app.pending_action = Some(crate::ui::app::PendingAction::ImportCommit);
                 app.input_mode = InputMode::Confirm;
             }
             ImportStep::Complete => {

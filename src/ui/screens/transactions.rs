@@ -20,7 +20,10 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
                     theme::dim_style(),
                 )),
                 Line::from(""),
-                Line::from(Span::styled("Press Esc to clear the search", theme::dim_style())),
+                Line::from(Span::styled(
+                    "Press Esc to clear the search",
+                    theme::dim_style(),
+                )),
             ]
         } else {
             vec![
@@ -41,7 +44,9 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Transactions (0) ",
-                Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::TEXT_DIM)
+                    .add_modifier(Modifier::BOLD),
             ));
         f.render_widget(Paragraph::new(msg).centered().block(block), area);
         return;
@@ -99,28 +104,25 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
         Constraint::Length(14),
     ];
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::OVERLAY))
-                .title(Span::styled(
-                    format!(
-                        " Transactions ({}) {} ",
-                        app.transactions.len(),
-                        if !app.search_input.is_empty() {
-                            format!("search: '{}'", app.search_input)
-                        } else {
-                            String::new()
-                        }
-                    ),
-                    Style::default()
-                        .fg(theme::TEXT_DIM)
-                        .add_modifier(Modifier::BOLD),
-                )),
-        );
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::OVERLAY))
+            .title(Span::styled(
+                format!(
+                    " Transactions ({}) {} ",
+                    app.transactions.len(),
+                    if !app.search_input.is_empty() {
+                        format!("search: '{}'", app.search_input)
+                    } else {
+                        String::new()
+                    }
+                ),
+                Style::default()
+                    .fg(theme::TEXT_DIM)
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
 
     f.render_widget(table, area);
 }
-

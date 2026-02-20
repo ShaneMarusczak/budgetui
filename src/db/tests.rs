@@ -64,7 +64,11 @@ fn test_account_by_id_not_found() {
 #[test]
 fn test_multiple_accounts() {
     let db = Database::open_in_memory().unwrap();
-    let a1 = Account::new("Chase Checking".into(), AccountType::Checking, "Chase".into());
+    let a1 = Account::new(
+        "Chase Checking".into(),
+        AccountType::Checking,
+        "Chase".into(),
+    );
     let a2 = Account::new("Savings".into(), AccountType::Savings, "Bank".into());
     let a3 = Account::new("Visa".into(), AccountType::CreditCard, "Capital One".into());
     db.insert_account(&a1).unwrap();
@@ -176,7 +180,9 @@ fn test_transaction_insert_and_query() {
     assert!(txn_id > 0);
 
     // Test dedup
-    let batch_count = db.insert_transactions_batch(std::slice::from_ref(&txn)).unwrap();
+    let batch_count = db
+        .insert_transactions_batch(std::slice::from_ref(&txn))
+        .unwrap();
     assert_eq!(batch_count, 0); // duplicate skipped
 
     let txns = db
@@ -185,7 +191,8 @@ fn test_transaction_insert_and_query() {
     assert_eq!(txns.len(), 1);
 
     // Update description
-    db.update_transaction_description(txn_id, "My Coffee").unwrap();
+    db.update_transaction_description(txn_id, "My Coffee")
+        .unwrap();
     let updated = db
         .get_transactions(Some(1), None, None, None, None, None)
         .unwrap();
@@ -202,16 +209,22 @@ fn test_transaction_search() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let results = db.get_transactions(Some(100), None, None, None, Some("coffee"), None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, None, None, Some("coffee"), None)
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].description, "Starbucks Coffee");
 
     // Search by notes
-    let results = db.get_transactions(Some(100), None, None, None, Some("morning"), None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, None, None, Some("morning"), None)
+        .unwrap();
     assert_eq!(results.len(), 1);
 
     // Search by original description
-    let results = db.get_transactions(Some(100), None, None, None, Some("AMZN"), None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, None, None, Some("AMZN"), None)
+        .unwrap();
     assert_eq!(results.len(), 1);
 }
 
@@ -220,7 +233,9 @@ fn test_transaction_search_no_results() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let results = db.get_transactions(Some(100), None, None, None, Some("nonexistent"), None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, None, None, Some("nonexistent"), None)
+        .unwrap();
     assert!(results.is_empty());
 }
 
@@ -229,13 +244,19 @@ fn test_transaction_month_filter() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let jan = db.get_transactions(Some(100), None, None, None, None, Some("2024-01")).unwrap();
+    let jan = db
+        .get_transactions(Some(100), None, None, None, None, Some("2024-01"))
+        .unwrap();
     assert_eq!(jan.len(), 3);
 
-    let feb = db.get_transactions(Some(100), None, None, None, None, Some("2024-02")).unwrap();
+    let feb = db
+        .get_transactions(Some(100), None, None, None, None, Some("2024-02"))
+        .unwrap();
     assert_eq!(feb.len(), 1);
 
-    let all = db.get_transactions(Some(100), None, None, None, None, None).unwrap();
+    let all = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
     assert_eq!(all.len(), 4);
 }
 
@@ -244,7 +265,9 @@ fn test_transaction_month_filter_no_results() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let results = db.get_transactions(Some(100), None, None, None, None, Some("2025-06")).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, None, None, None, Some("2025-06"))
+        .unwrap();
     assert!(results.is_empty());
 }
 
@@ -253,10 +276,14 @@ fn test_transaction_account_filter() {
     let mut db = Database::open_in_memory().unwrap();
     let account_id = setup_test_data(&mut db);
 
-    let results = db.get_transactions(Some(100), None, Some(account_id), None, None, None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, Some(account_id), None, None, None)
+        .unwrap();
     assert_eq!(results.len(), 4);
 
-    let results = db.get_transactions(Some(100), None, Some(9999), None, None, None).unwrap();
+    let results = db
+        .get_transactions(Some(100), None, Some(9999), None, None, None)
+        .unwrap();
     assert_eq!(results.len(), 0);
 }
 
@@ -266,13 +293,23 @@ fn test_transaction_category_filter() {
     setup_test_data(&mut db);
 
     let cats = db.get_categories().unwrap();
-    let food_id = cats.iter().find(|c| c.name == "Food & Dining").unwrap().id.unwrap();
+    let food_id = cats
+        .iter()
+        .find(|c| c.name == "Food & Dining")
+        .unwrap()
+        .id
+        .unwrap();
 
     // Assign one transaction to a category
-    let txns = db.get_transactions(Some(100), None, None, None, None, None).unwrap();
-    db.update_transaction_category(txns[0].id.unwrap(), Some(food_id)).unwrap();
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
+    db.update_transaction_category(txns[0].id.unwrap(), Some(food_id))
+        .unwrap();
 
-    let filtered = db.get_transactions(Some(100), None, None, Some(food_id), None, None).unwrap();
+    let filtered = db
+        .get_transactions(Some(100), None, None, Some(food_id), None, None)
+        .unwrap();
     assert_eq!(filtered.len(), 1);
 }
 
@@ -282,7 +319,16 @@ fn test_transaction_combined_filters() {
     let account_id = setup_test_data(&mut db);
 
     // Search + month filter
-    let results = db.get_transactions(Some(100), None, Some(account_id), None, Some("coffee"), Some("2024-01")).unwrap();
+    let results = db
+        .get_transactions(
+            Some(100),
+            None,
+            Some(account_id),
+            None,
+            Some("coffee"),
+            Some("2024-01"),
+        )
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].description, "Starbucks Coffee");
 }
@@ -292,10 +338,14 @@ fn test_transaction_limit_offset() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let limited = db.get_transactions(Some(2), None, None, None, None, None).unwrap();
+    let limited = db
+        .get_transactions(Some(2), None, None, None, None, None)
+        .unwrap();
     assert_eq!(limited.len(), 2);
 
-    let offset = db.get_transactions(Some(2), Some(2), None, None, None, None).unwrap();
+    let offset = db
+        .get_transactions(Some(2), Some(2), None, None, None, None)
+        .unwrap();
     assert_eq!(offset.len(), 2);
 
     // Offset results should be different from non-offset
@@ -307,13 +357,17 @@ fn test_transaction_delete() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let txns = db.get_transactions(Some(100), None, None, None, None, None).unwrap();
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
     let count_before = txns.len();
     let id = txns[0].id.unwrap();
 
     db.delete_transaction(id).unwrap();
 
-    let txns = db.get_transactions(Some(100), None, None, None, None, None).unwrap();
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
     assert_eq!(txns.len(), count_before - 1);
     assert!(!txns.iter().any(|t| t.id == Some(id)));
 }
@@ -323,7 +377,9 @@ fn test_transaction_ordering() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let txns = db.get_transactions(Some(100), None, None, None, None, None).unwrap();
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
     // Should be ordered by date DESC, id DESC
     for window in txns.windows(2) {
         assert!(window[0].date >= window[1].date);
@@ -367,7 +423,12 @@ fn test_categories_sorted_by_name() {
 fn test_budget_crud() {
     let db = Database::open_in_memory().unwrap();
     let cats = db.get_categories().unwrap();
-    let food_id = cats.iter().find(|c| c.name == "Food & Dining").unwrap().id.unwrap();
+    let food_id = cats
+        .iter()
+        .find(|c| c.name == "Food & Dining")
+        .unwrap()
+        .id
+        .unwrap();
 
     let budget = Budget::new(food_id, "2024-01".into(), dec!(500));
     let id = db.upsert_budget(&budget).unwrap();
@@ -393,10 +454,17 @@ fn test_budget_crud() {
 fn test_budget_different_months() {
     let db = Database::open_in_memory().unwrap();
     let cats = db.get_categories().unwrap();
-    let food_id = cats.iter().find(|c| c.name == "Food & Dining").unwrap().id.unwrap();
+    let food_id = cats
+        .iter()
+        .find(|c| c.name == "Food & Dining")
+        .unwrap()
+        .id
+        .unwrap();
 
-    db.upsert_budget(&Budget::new(food_id, "2024-01".into(), dec!(500))).unwrap();
-    db.upsert_budget(&Budget::new(food_id, "2024-02".into(), dec!(600))).unwrap();
+    db.upsert_budget(&Budget::new(food_id, "2024-01".into(), dec!(500)))
+        .unwrap();
+    db.upsert_budget(&Budget::new(food_id, "2024-02".into(), dec!(600)))
+        .unwrap();
 
     assert_eq!(db.get_budgets("2024-01").unwrap().len(), 1);
     assert_eq!(db.get_budgets("2024-02").unwrap().len(), 1);
@@ -409,7 +477,12 @@ fn test_budget_different_months() {
 fn test_import_rule_crud() {
     let db = Database::open_in_memory().unwrap();
     let cats = db.get_categories().unwrap();
-    let shopping_id = cats.iter().find(|c| c.name == "Shopping").unwrap().id.unwrap();
+    let shopping_id = cats
+        .iter()
+        .find(|c| c.name == "Shopping")
+        .unwrap()
+        .id
+        .unwrap();
 
     let rule = ImportRule::new_contains("amazon".into(), shopping_id);
     let id = db.insert_import_rule(&rule).unwrap();
@@ -431,7 +504,12 @@ fn test_import_rule_crud() {
 fn test_import_rules_ordered_by_priority() {
     let db = Database::open_in_memory().unwrap();
     let cats = db.get_categories().unwrap();
-    let cat_id = cats.iter().find(|c| c.name == "Shopping").unwrap().id.unwrap();
+    let cat_id = cats
+        .iter()
+        .find(|c| c.name == "Shopping")
+        .unwrap()
+        .id
+        .unwrap();
 
     let mut low = ImportRule::new_contains("low".into(), cat_id);
     low.priority = 1;
@@ -593,11 +671,15 @@ fn test_batch_insert_dedup() {
         created_at: "2024-01-15T00:00:00Z".into(),
     };
 
-    let count1 = db.insert_transactions_batch(std::slice::from_ref(&txn)).unwrap();
+    let count1 = db
+        .insert_transactions_batch(std::slice::from_ref(&txn))
+        .unwrap();
     assert_eq!(count1, 1);
 
     // Same hash -> skipped
-    let count2 = db.insert_transactions_batch(std::slice::from_ref(&txn)).unwrap();
+    let count2 = db
+        .insert_transactions_batch(std::slice::from_ref(&txn))
+        .unwrap();
     assert_eq!(count2, 0);
 }
 
@@ -621,11 +703,15 @@ fn test_batch_insert_empty_hash_not_deduped() {
         created_at: "2024-01-15T00:00:00Z".into(),
     };
 
-    let count1 = db.insert_transactions_batch(std::slice::from_ref(&txn)).unwrap();
+    let count1 = db
+        .insert_transactions_batch(std::slice::from_ref(&txn))
+        .unwrap();
     assert_eq!(count1, 1);
 
     // Empty hash -> should NOT be deduped
-    let count2 = db.insert_transactions_batch(std::slice::from_ref(&txn)).unwrap();
+    let count2 = db
+        .insert_transactions_batch(std::slice::from_ref(&txn))
+        .unwrap();
     assert_eq!(count2, 1);
 
     assert_eq!(db.get_transaction_count().unwrap(), 2);
@@ -663,11 +749,12 @@ fn test_batch_insert_multiple() {
 #[test]
 fn test_schema_version_set() {
     let db = Database::open_in_memory().unwrap();
-    let version: i32 = db.conn.query_row(
-        "SELECT version FROM schema_version LIMIT 1",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let version: i32 = db
+        .conn
+        .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
     assert_eq!(version, schema::CURRENT_VERSION);
 }
 
@@ -676,11 +763,12 @@ fn test_double_migrate_idempotent() {
     let mut db = Database::open_in_memory().unwrap();
     // Running migrate again should not fail
     db.migrate().unwrap();
-    let version: i32 = db.conn.query_row(
-        "SELECT version FROM schema_version LIMIT 1",
-        [],
-        |row| row.get(0),
-    ).unwrap();
+    let version: i32 = db
+        .conn
+        .query_row("SELECT version FROM schema_version LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
     assert_eq!(version, schema::CURRENT_VERSION);
 }
 
@@ -707,7 +795,9 @@ fn test_decimal_precision_preserved() {
     };
 
     db.insert_transaction(&txn).unwrap();
-    let fetched = db.get_transactions(Some(1), None, None, None, None, None).unwrap();
+    let fetched = db
+        .get_transactions(Some(1), None, None, None, None, None)
+        .unwrap();
     assert_eq!(fetched[0].amount, dec!(1234.5678));
 }
 
@@ -732,6 +822,8 @@ fn test_large_transaction_amounts() {
     };
 
     db.insert_transaction(&txn).unwrap();
-    let fetched = db.get_transactions(Some(1), None, None, None, None, None).unwrap();
+    let fetched = db
+        .get_transactions(Some(1), None, None, None, None, None)
+        .unwrap();
     assert_eq!(fetched[0].amount, dec!(-350000.00));
 }

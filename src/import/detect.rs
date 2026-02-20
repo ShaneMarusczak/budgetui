@@ -3,7 +3,10 @@ use super::CsvProfile;
 /// Known bank CSV fingerprints for auto-detection.
 /// Returns a CsvProfile if the format is recognized, None otherwise.
 pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Option<CsvProfile> {
-    let h: Vec<String> = headers.iter().map(|s| s.to_lowercase().trim().to_string()).collect();
+    let h: Vec<String> = headers
+        .iter()
+        .map(|s| s.to_lowercase().trim().to_string())
+        .collect();
 
     // Wells Fargo: no headers, 5 columns, col[2] == "*"
     if headers.is_empty() && first_row.len() == 5 && first_row.get(2).map(|s| s.trim()) == Some("*")
@@ -140,7 +143,9 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
     }
 
     // Discover: "Trans. Date" (with period)
-    if h.iter().any(|s| s.contains("trans. date") || s.contains("trans.date")) {
+    if h.iter()
+        .any(|s| s.contains("trans. date") || s.contains("trans.date"))
+    {
         return Some(CsvProfile {
             name: "Discover".into(),
             date_column: 0,
@@ -156,9 +161,7 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
     }
 
     // Chase Checking: "Details" + "Check or Slip #"
-    if h.contains(&"details".into())
-        && h.iter().any(|s| s.contains("check or slip"))
-    {
+    if h.contains(&"details".into()) && h.iter().any(|s| s.contains("check or slip")) {
         return Some(CsvProfile {
             name: "Chase Checking".into(),
             date_column: col_index(&h, "posting date").unwrap_or(1),

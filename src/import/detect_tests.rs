@@ -30,7 +30,13 @@ fn test_detect_amex() {
 
 #[test]
 fn test_detect_boa_credit() {
-    let headers = h(&["Posted Date", "Reference Number", "Payee", "Address", "Amount"]);
+    let headers = h(&[
+        "Posted Date",
+        "Reference Number",
+        "Payee",
+        "Address",
+        "Amount",
+    ]);
     let first_row = h(&["01/15/2024", "12345", "Coffee Shop", "123 Main St", "-4.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Bank of America Credit Card");
@@ -46,7 +52,13 @@ fn test_detect_boa_checking() {
 
 #[test]
 fn test_detect_usaa() {
-    let headers = h(&["Date", "Description", "Original Description", "Category", "Amount"]);
+    let headers = h(&[
+        "Date",
+        "Description",
+        "Original Description",
+        "Category",
+        "Amount",
+    ]);
     let first_row = h(&["01/15/2024", "Coffee", "COFFEE SHOP #123", "Food", "-4.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "USAA");
@@ -65,8 +77,24 @@ fn test_detect_citi() {
 
 #[test]
 fn test_detect_capital_one_credit() {
-    let headers = h(&["Transaction Date", "Posted Date", "Card No.", "Description", "Category", "Debit", "Credit"]);
-    let first_row = h(&["2024-01-15", "2024-01-16", "1234", "Coffee", "Food", "4.50", ""]);
+    let headers = h(&[
+        "Transaction Date",
+        "Posted Date",
+        "Card No.",
+        "Description",
+        "Category",
+        "Debit",
+        "Credit",
+    ]);
+    let first_row = h(&[
+        "2024-01-15",
+        "2024-01-16",
+        "1234",
+        "Coffee",
+        "Food",
+        "4.50",
+        "",
+    ]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Capital One Credit Card");
     assert_eq!(profile.date_format, "%Y-%m-%d");
@@ -74,7 +102,14 @@ fn test_detect_capital_one_credit() {
 
 #[test]
 fn test_detect_capital_one_checking() {
-    let headers = h(&["Account Number", "Transaction Date", "Transaction Amount", "Transaction Type", "Transaction Description", "Balance"]);
+    let headers = h(&[
+        "Account Number",
+        "Transaction Date",
+        "Transaction Amount",
+        "Transaction Type",
+        "Transaction Description",
+        "Balance",
+    ]);
     let first_row = h(&["1234", "01/15/2024", "-4.50", "Debit", "Coffee", "995.50"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Capital One Checking");
@@ -82,7 +117,13 @@ fn test_detect_capital_one_checking() {
 
 #[test]
 fn test_detect_discover() {
-    let headers = h(&["Trans. Date", "Post Date", "Description", "Amount", "Category"]);
+    let headers = h(&[
+        "Trans. Date",
+        "Post Date",
+        "Description",
+        "Amount",
+        "Category",
+    ]);
     let first_row = h(&["01/15/2024", "01/16/2024", "Coffee", "-4.50", "Food"]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Discover");
@@ -90,16 +131,48 @@ fn test_detect_discover() {
 
 #[test]
 fn test_detect_chase_checking() {
-    let headers = h(&["Details", "Posting Date", "Description", "Amount", "Type", "Balance", "Check or Slip #"]);
-    let first_row = h(&["DEBIT", "01/15/2024", "Coffee", "-4.50", "ACH", "995.50", ""]);
+    let headers = h(&[
+        "Details",
+        "Posting Date",
+        "Description",
+        "Amount",
+        "Type",
+        "Balance",
+        "Check or Slip #",
+    ]);
+    let first_row = h(&[
+        "DEBIT",
+        "01/15/2024",
+        "Coffee",
+        "-4.50",
+        "ACH",
+        "995.50",
+        "",
+    ]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Chase Checking");
 }
 
 #[test]
 fn test_detect_chase_credit() {
-    let headers = h(&["Transaction Date", "Post Date", "Description", "Category", "Type", "Amount", "Memo"]);
-    let first_row = h(&["01/15/2024", "01/16/2024", "Coffee", "Food", "Sale", "-4.50", ""]);
+    let headers = h(&[
+        "Transaction Date",
+        "Post Date",
+        "Description",
+        "Category",
+        "Type",
+        "Amount",
+        "Memo",
+    ]);
+    let first_row = h(&[
+        "01/15/2024",
+        "01/16/2024",
+        "Coffee",
+        "Food",
+        "Sale",
+        "-4.50",
+        "",
+    ]);
     let profile = detect_bank_format(&headers, &first_row).unwrap();
     assert_eq!(profile.name, "Chase Credit Card");
 }

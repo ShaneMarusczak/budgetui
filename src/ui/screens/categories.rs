@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, List, ListItem, Row, Table},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table},
     Frame,
 };
 
@@ -61,7 +61,11 @@ fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
             .title(Span::styled(
                 format!(" Categories ({}) ", app.categories.len()),
                 Style::default()
-                    .fg(if !app.category_view_rules { theme::ACCENT } else { theme::TEXT_DIM })
+                    .fg(if !app.category_view_rules {
+                        theme::ACCENT
+                    } else {
+                        theme::TEXT_DIM
+                    })
                     .add_modifier(Modifier::BOLD),
             )),
     );
@@ -151,20 +155,19 @@ fn render_rules_list(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(10),
     ];
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(rules_border_color))
-                .title(Span::styled(
-                    format!(" Rules ({}) | :rule <pattern> <category> to add ", app.import_rules.len()),
-                    Style::default()
-                        .fg(rules_title_color)
-                        .add_modifier(Modifier::BOLD),
-                )),
-        );
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(rules_border_color))
+            .title(Span::styled(
+                format!(
+                    " Rules ({}) | :rule <pattern> <category> to add ",
+                    app.import_rules.len()
+                ),
+                Style::default()
+                    .fg(rules_title_color)
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
     f.render_widget(table, area);
 }
-
-use ratatui::widgets::Paragraph;

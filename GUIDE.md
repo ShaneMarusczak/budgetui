@@ -4,6 +4,80 @@ A comprehensive guide to everything you can do in BudgeTUI.
 
 ---
 
+## CLI Mode
+
+BudgeTUI has a headless CLI mode for scripting, automation pipelines, and quick operations without opening the full TUI.
+
+### Import
+
+```bash
+budgetui import ~/Downloads/statement.csv
+budgetui import statement.csv --account "Chase Checking"
+```
+
+The importer auto-detects bank format from CSV headers (same 11+ bank formats supported in the TUI wizard). Transactions are deduplicated by hash, auto-categorized against your existing rules, and inserted. Output goes to stdout:
+
+```
+Detected format: Chase Credit Card
+Parsed 47 transactions
+Auto-categorized 31/47 transactions
+Imported 42 new transactions (5 duplicates skipped)
+```
+
+### Export
+
+```bash
+budgetui export ~/june.csv --month 2026-06
+budgetui export                             # defaults to current month
+```
+
+Exports Date, Description, Amount, Category, Account, and Notes columns.
+
+### Summary
+
+```bash
+budgetui summary 2026-02
+budgetui summary          # defaults to current month
+```
+
+Prints income, expenses, net, net worth, total transaction count, and spending by category.
+
+### Accounts
+
+```bash
+budgetui accounts
+```
+
+Lists all accounts with ID, name, type, and institution.
+
+### Other
+
+```bash
+budgetui --help       # usage overview
+budgetui --version    # prints version
+```
+
+### Scripting Examples
+
+```bash
+# Monthly import cron job
+for f in ~/Downloads/*.csv; do
+  budgetui import "$f" && mv "$f" ~/Downloads/imported/
+done
+
+# Generate monthly reports
+for month in 2026-{01..12}; do
+  budgetui summary "$month" >> ~/budget-report.txt
+done
+
+# Export all months
+for month in 2026-{01..06}; do
+  budgetui export ~/exports/"$month".csv --month "$month"
+done
+```
+
+---
+
 ## Getting Started
 
 When you first launch BudgeTUI, you'll see the Dashboard with a default checking account already created. The status bar at the bottom shows your current mode, screen, month, and context-sensitive keybinding hints.
@@ -454,7 +528,6 @@ The database uses WAL (Write-Ahead Logging) mode for safe concurrent reads and f
 - **transactions** — id, account_id, date, description, original_description, amount, category_id, notes, is_transfer, import_hash
 - **budgets** — id, category_id, month, limit_amount (unique per category+month)
 - **import_rules** — id, pattern, category_id, is_regex, priority
-- **csv_profiles** — id, name, column mappings, date format, options
 
 ### Backup
 

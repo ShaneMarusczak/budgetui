@@ -61,7 +61,34 @@ Data is stored in a local SQLite database at your platform's data directory:
 - **macOS**: `~/Library/Application Support/com.budgetui.BudgeTUI/budgetui.db`
 - **Linux**: `~/.local/share/budgetui/budgetui.db`
 
-### Navigation
+### CLI Mode
+
+Run subcommands directly without opening the TUI — useful for scripting and automation pipelines.
+
+```bash
+# Import a bank CSV (auto-detects format)
+budgetui import ~/Downloads/chase-june.csv
+
+# Import into a specific account
+budgetui import statement.csv --account "Chase Checking"
+
+# Monthly summary
+budgetui summary 2026-02
+budgetui summary          # defaults to current month
+
+# Export transactions to CSV
+budgetui export ~/june.csv --month 2026-06
+budgetui export           # exports current month to ~/budgetui-export-YYYY-MM.csv
+
+# List all accounts
+budgetui accounts
+
+# Version / help
+budgetui --version
+budgetui --help
+```
+
+### TUI Navigation
 
 | Key | Action |
 |-----|--------|

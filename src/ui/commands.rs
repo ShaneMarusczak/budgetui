@@ -44,27 +44,112 @@ pub(crate) static COMMANDS: LazyLock<HashMap<&str, Command>> = LazyLock::new(|| 
     register_command!("h", "Show available commands", cmd_help, r);
     register_command!("month", "Set month (e.g. :month 2024-01)", cmd_month, r);
     register_command!("m", "Set month (e.g. :m 2024-01)", cmd_month, r);
-    register_command!("account", "Create account (e.g. :account Chase Checking)", cmd_account, r);
-    register_command!("a", "Create account (e.g. :a Chase Checking)", cmd_account, r);
-    register_command!("rule", "Add categorization rule (e.g. :rule amazon Shopping)", cmd_rule, r);
-    register_command!("r", "Add categorization rule (e.g. :r amazon Shopping)", cmd_rule, r);
-    register_command!("search", "Search transactions (e.g. :search coffee)", cmd_search, r);
+    register_command!(
+        "account",
+        "Create account (e.g. :account Chase Checking)",
+        cmd_account,
+        r
+    );
+    register_command!(
+        "a",
+        "Create account (e.g. :a Chase Checking)",
+        cmd_account,
+        r
+    );
+    register_command!(
+        "rule",
+        "Add categorization rule (e.g. :rule amazon Shopping)",
+        cmd_rule,
+        r
+    );
+    register_command!(
+        "r",
+        "Add categorization rule (e.g. :r amazon Shopping)",
+        cmd_rule,
+        r
+    );
+    register_command!(
+        "search",
+        "Search transactions (e.g. :search coffee)",
+        cmd_search,
+        r
+    );
     register_command!("s", "Search transactions (e.g. :s coffee)", cmd_search, r);
-    register_command!("budget", "Set budget (e.g. :budget Food & Dining 500)", cmd_budget, r);
-    register_command!("delete-budget", "Delete selected budget", cmd_delete_budget, r);
-    register_command!("category", "Create category (e.g. :category Subscriptions)", cmd_category, r);
-    register_command!("delete-rule", "Delete selected import rule", cmd_delete_rule, r);
-    register_command!("regex-rule", "Add regex rule (e.g. :regex-rule ^AMZ.* Shopping)", cmd_regex_rule, r);
+    register_command!(
+        "budget",
+        "Set budget (e.g. :budget Food & Dining 500)",
+        cmd_budget,
+        r
+    );
+    register_command!(
+        "delete-budget",
+        "Delete selected budget",
+        cmd_delete_budget,
+        r
+    );
+    register_command!(
+        "category",
+        "Create category (e.g. :category Subscriptions)",
+        cmd_category,
+        r
+    );
+    register_command!(
+        "delete-rule",
+        "Delete selected import rule",
+        cmd_delete_rule,
+        r
+    );
+    register_command!(
+        "regex-rule",
+        "Add regex rule (e.g. :regex-rule ^AMZ.* Shopping)",
+        cmd_regex_rule,
+        r
+    );
     register_command!("rename", "Rename selected transaction", cmd_rename, r);
     register_command!("recat", "Re-categorize selected transaction", cmd_recat, r);
     register_command!("accounts", "List all accounts", cmd_accounts, r);
-    register_command!("add-txn", "Add manual transaction (e.g. :add-txn 2024-01-15 Coffee -4.50)", cmd_add_txn, r);
-    register_command!("delete-txn", "Delete selected transaction", cmd_delete_txn, r);
-    register_command!("export", "Export transactions to CSV (e.g. :export ~/budget.csv)", cmd_export, r);
-    register_command!("subcategory", "Create subcategory (e.g. :subcategory Housing Rent)", cmd_subcategory, r);
-    register_command!("sub", "Create subcategory (e.g. :sub Housing Rent)", cmd_subcategory, r);
-    register_command!("filter-account", "Filter transactions by account (e.g. :filter-account Chase)", cmd_filter_account, r);
-    register_command!("fa", "Filter transactions by account", cmd_filter_account, r);
+    register_command!(
+        "add-txn",
+        "Add manual transaction (e.g. :add-txn 2024-01-15 Coffee -4.50)",
+        cmd_add_txn,
+        r
+    );
+    register_command!(
+        "delete-txn",
+        "Delete selected transaction",
+        cmd_delete_txn,
+        r
+    );
+    register_command!(
+        "export",
+        "Export transactions to CSV (e.g. :export ~/budget.csv)",
+        cmd_export,
+        r
+    );
+    register_command!(
+        "subcategory",
+        "Create subcategory (e.g. :subcategory Housing Rent)",
+        cmd_subcategory,
+        r
+    );
+    register_command!(
+        "sub",
+        "Create subcategory (e.g. :sub Housing Rent)",
+        cmd_subcategory,
+        r
+    );
+    register_command!(
+        "filter-account",
+        "Filter transactions by account (e.g. :filter-account Chase)",
+        cmd_filter_account,
+        r
+    );
+    register_command!(
+        "fa",
+        "Filter transactions by account",
+        cmd_filter_account,
+        r
+    );
     register_command!("next-month", "Go to next month", cmd_next_month, r);
     register_command!("prev-month", "Go to previous month", cmd_prev_month, r);
 
@@ -82,7 +167,9 @@ pub(crate) fn handle_command(input: &str, app: &mut App, db: &mut Database) -> a
     } else {
         // Try fuzzy match
         let suggestion = find_closest(cmd_name);
-        app.set_status(format!("Unknown command: :{cmd_name}. Did you mean :{suggestion}?"));
+        app.set_status(format!(
+            "Unknown command: :{cmd_name}. Did you mean :{suggestion}?"
+        ));
     }
 
     Ok(())
@@ -106,9 +193,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
         curr[0] = i;
         for j in 1..=b.len() {
             let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1)
-                .min(curr[j - 1] + 1)
-                .min(prev[j - 1] + cost);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
         }
         std::mem::swap(&mut prev, &mut curr);
     }
@@ -190,19 +275,28 @@ fn cmd_month(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()>
 
 fn cmd_account(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
     if args.is_empty() {
-        let types: Vec<&str> = AccountType::all()
-            .iter()
-            .map(|t| t.as_str())
-            .collect();
-        app.set_status(format!("Usage: :account <name> [type]. Types: {}", types.join(", ")));
+        let types: Vec<&str> = AccountType::all().iter().map(|t| t.as_str()).collect();
+        app.set_status(format!(
+            "Usage: :account <name> [type]. Types: {}",
+            types.join(", ")
+        ));
         return Ok(());
     }
 
     let parts: Vec<&str> = args.rsplitn(2, ' ').collect();
     let (name, account_type) = if parts.len() == 2 {
         let possible_type = parts[0].to_lowercase();
-        if ["checking", "savings", "credit", "investment", "cash", "loan"].contains(&possible_type.as_str()) {
-            (parts[1].to_string(), AccountType::from_str(&possible_type))
+        if [
+            "checking",
+            "savings",
+            "credit",
+            "investment",
+            "cash",
+            "loan",
+        ]
+        .contains(&possible_type.as_str())
+        {
+            (parts[1].to_string(), AccountType::parse(&possible_type))
         } else {
             (args.to_string(), AccountType::Checking)
         }
@@ -267,7 +361,9 @@ fn cmd_search(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
 
 fn cmd_budget(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
     if args.is_empty() {
-        app.set_status("Usage: :budget <category_name> <amount>. Example: :budget Food & Dining 500");
+        app.set_status(
+            "Usage: :budget <category_name> <amount>. Example: :budget Food & Dining 500",
+        );
         return Ok(());
     }
 
@@ -300,7 +396,10 @@ fn cmd_budget(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
         db.upsert_budget(&budget)?;
         app.refresh_budgets(db)?;
         app.screen = Screen::Budgets;
-        app.set_status(format!("Budget set: {} = ${amount} for {}", cat.name, app.current_month));
+        app.set_status(format!(
+            "Budget set: {} = ${amount} for {}",
+            cat.name, app.current_month
+        ));
     } else {
         app.set_status(format!("Category '{category_name}' not found"));
     }
@@ -357,10 +456,7 @@ fn cmd_delete_rule(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Re
         if let Some(id) = rule.id {
             let pattern = rule.pattern.clone();
             app.confirm_message = format!("Delete rule '{pattern}'?");
-            app.pending_action = Some(super::app::PendingAction::DeleteRule {
-                id,
-                pattern,
-            });
+            app.pending_action = Some(super::app::PendingAction::DeleteRule { id, pattern });
             app.input_mode = InputMode::Confirm;
         }
     }
@@ -532,14 +628,16 @@ fn cmd_add_txn(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<(
         }
     };
 
-    let account_id = app
-        .accounts
-        .get(app.account_index)
-        .and_then(|a| a.id)
-        .unwrap_or(1);
+    let account_id = match app.accounts.get(app.account_index).and_then(|a| a.id) {
+        Some(id) => id,
+        None => {
+            app.set_status("No account found. Create one with :account <name>");
+            return Ok(());
+        }
+    };
 
     let account = db.get_account_by_id(account_id)?;
-    let account_name = account.map(|a| a.name).unwrap_or_else(|| "Default".into());
+    let account_name = account.map(|a| a.name).unwrap_or_else(|| "Unknown".into());
 
     let txn = crate::models::Transaction {
         id: None,
@@ -558,7 +656,9 @@ fn cmd_add_txn(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<(
     db.insert_transaction(&txn)?;
     app.refresh_transactions(db)?;
     app.refresh_dashboard(db)?;
-    app.set_status(format!("Added transaction: {description} ${amount} to {account_name}"));
+    app.set_status(format!(
+        "Added transaction: {description} ${amount} to {account_name}"
+    ));
     Ok(())
 }
 
@@ -603,7 +703,14 @@ fn cmd_export(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
     let mut wtr = csv::Writer::from_path(&path)
         .map_err(|e| anyhow::anyhow!("Failed to create export file: {e}"))?;
 
-    wtr.write_record(["Date", "Description", "Amount", "Category", "Account", "Notes"])?;
+    wtr.write_record([
+        "Date",
+        "Description",
+        "Amount",
+        "Category",
+        "Account",
+        "Notes",
+    ])?;
 
     for txn in &txns {
         let cat_name = txn
@@ -662,7 +769,10 @@ fn cmd_subcategory(args: &str, app: &mut App, db: &mut Database) -> anyhow::Resu
         };
         db.insert_category(&cat)?;
         app.refresh_categories(db)?;
-        app.set_status(format!("Created subcategory: {} > {child_name}", parent.name));
+        app.set_status(format!(
+            "Created subcategory: {} > {child_name}",
+            parent.name
+        ));
     } else {
         app.set_status(format!("Parent category '{parent_name}' not found"));
     }
@@ -694,7 +804,10 @@ fn cmd_filter_account(args: &str, app: &mut App, db: &mut Database) -> anyhow::R
         app.set_status(format!("Filtering by account: {}", acct.name));
     } else {
         let names: Vec<&str> = accounts.iter().map(|a| a.name.as_str()).collect();
-        app.set_status(format!("Account not found. Available: {}", names.join(", ")));
+        app.set_status(format!(
+            "Account not found. Available: {}",
+            names.join(", ")
+        ));
     }
 
     Ok(())
@@ -709,10 +822,9 @@ fn cmd_prev_month(_args: &str, app: &mut App, db: &mut Database) -> anyhow::Resu
 }
 
 fn advance_month(app: &mut App, db: &mut Database, delta: i32) -> anyhow::Result<()> {
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(
-        &format!("{}-01", app.current_month),
-        "%Y-%m-%d",
-    ) {
+    if let Ok(date) =
+        chrono::NaiveDate::parse_from_str(&format!("{}-01", app.current_month), "%Y-%m-%d")
+    {
         let new_date = if delta > 0 {
             date.checked_add_months(chrono::Months::new(1))
         } else {

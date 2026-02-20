@@ -110,7 +110,6 @@ pub(crate) struct App {
     pub(crate) transaction_index: usize,
     pub(crate) transaction_scroll: usize,
     pub(crate) transaction_filter_account: Option<i64>,
-    pub(crate) transaction_filter_category: Option<i64>,
     pub(crate) transaction_count: i64,
 
     // Categories
@@ -177,7 +176,6 @@ impl App {
             transaction_index: 0,
             transaction_scroll: 0,
             transaction_filter_account: None,
-            transaction_filter_category: None,
             transaction_count: 0,
 
             categories: Vec::new(),
@@ -202,7 +200,9 @@ impl App {
             import_account_id: None,
             import_detected_bank: None,
 
-            file_browser_path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+            file_browser_path: directories::UserDirs::new()
+                .map(|d| d.home_dir().to_path_buf())
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
             file_browser_entries: Vec::new(),
             file_browser_index: 0,
 
@@ -221,6 +221,8 @@ impl App {
         self.spending_by_category = db.get_spending_by_category(&self.current_month)?;
         self.monthly_trend = db.get_monthly_trend(12)?;
         self.transaction_count = db.get_transaction_count()?;
+        // Transactions are needed for dashboard card counts (income_count, expense_count)
+        self.refresh_transactions(db)?;
         Ok(())
     }
 
@@ -234,7 +236,7 @@ impl App {
             Some(200),
             None,
             self.transaction_filter_account,
-            self.transaction_filter_category,
+            None, // category filter (not yet implemented)
             search,
             Some(&self.current_month),
         )?;
@@ -262,8 +264,7 @@ impl App {
     }
 
     pub(crate) fn refresh_all(&mut self, db: &Database) -> Result<()> {
-        self.refresh_dashboard(db)?;
-        self.refresh_transactions(db)?;
+        self.refresh_dashboard(db)?; // also refreshes transactions
         self.refresh_categories(db)?;
         self.refresh_budgets(db)?;
         self.refresh_accounts(db)?;
@@ -316,9 +317,9 @@ impl App {
                 .map(|e| e.path())
                 .filter(|p| {
                     p.is_dir()
-                        || p.extension()
-                            .and_then(|e| e.to_str())
-                            .is_some_and(|ext| matches!(ext, "csv" | "CSV" | "tsv" | "ofx" | "qfx" | "qif"))
+                        || p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                            matches!(ext, "csv" | "CSV" | "tsv" | "ofx" | "qfx" | "qif")
+                        })
                 })
                 .collect();
             dir_entries.sort();

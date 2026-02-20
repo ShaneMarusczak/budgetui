@@ -15,7 +15,7 @@ pub(crate) fn render(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Tab bar
-            Constraint::Min(5),   // Main content
+            Constraint::Min(5),    // Main content
             Constraint::Length(1), // Status bar
             Constraint::Length(1), // Command bar
         ])
@@ -40,10 +40,18 @@ fn render_tab_bar(f: &mut Frame, area: Rect, app: &App) {
             if *s == app.screen {
                 Line::from(vec![
                     Span::styled(format!("{num}:"), Style::default().fg(theme::TEXT_DIM)),
-                    Span::styled(format!("{s}"), Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{s}"),
+                        Style::default()
+                            .fg(theme::ACCENT)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ])
             } else {
-                Line::from(Span::styled(format!("{num}:{s}"), Style::default().fg(theme::TEXT_DIM)))
+                Line::from(Span::styled(
+                    format!("{num}:{s}"),
+                    Style::default().fg(theme::TEXT_DIM),
+                ))
             }
         })
         .collect();
@@ -78,14 +86,32 @@ fn render_screen(f: &mut Frame, area: Rect, app: &App) {
 fn render_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let mode_label = format!(" {} ", app.input_mode);
     let mode_style = match app.input_mode {
-        InputMode::Normal => Style::default().fg(theme::HEADER_BG).bg(theme::ACCENT).add_modifier(Modifier::BOLD),
-        InputMode::Command => Style::default().fg(theme::HEADER_BG).bg(theme::GREEN).add_modifier(Modifier::BOLD),
-        InputMode::Search => Style::default().fg(theme::HEADER_BG).bg(theme::YELLOW).add_modifier(Modifier::BOLD),
-        InputMode::Editing => Style::default().fg(theme::HEADER_BG).bg(theme::GREEN).add_modifier(Modifier::BOLD),
-        InputMode::Confirm => Style::default().fg(theme::HEADER_BG).bg(theme::RED).add_modifier(Modifier::BOLD),
+        InputMode::Normal => Style::default()
+            .fg(theme::HEADER_BG)
+            .bg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD),
+        InputMode::Command => Style::default()
+            .fg(theme::HEADER_BG)
+            .bg(theme::GREEN)
+            .add_modifier(Modifier::BOLD),
+        InputMode::Search => Style::default()
+            .fg(theme::HEADER_BG)
+            .bg(theme::YELLOW)
+            .add_modifier(Modifier::BOLD),
+        InputMode::Editing => Style::default()
+            .fg(theme::HEADER_BG)
+            .bg(theme::GREEN)
+            .add_modifier(Modifier::BOLD),
+        InputMode::Confirm => Style::default()
+            .fg(theme::HEADER_BG)
+            .bg(theme::RED)
+            .add_modifier(Modifier::BOLD),
     };
 
-    let info = format!(" {} | {} | {} txns", app.screen, app.current_month, app.transaction_count);
+    let info = format!(
+        " {} | {} | {} txns",
+        app.screen, app.current_month, app.transaction_count
+    );
 
     let right = match app.screen {
         Screen::Dashboard => " H/L month | n/p account | ? help ",
@@ -179,22 +205,63 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
     let mut help_text = vec![
         Line::from(Span::styled(
             " BudgeTUI Help ",
-            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(Span::styled(" Navigation", Style::default().fg(theme::YELLOW).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  j/k or Up/Down   Move cursor           1-5        Switch tabs", theme::normal_style())),
-        Line::from(Span::styled("  Tab/Shift-Tab    Cycle tabs            g/G        Top/Bottom", theme::normal_style())),
-        Line::from(Span::styled("  H/L              Prev/Next month       Ctrl-d/u   Page Down/Up", theme::normal_style())),
-        Line::from(Span::styled("  n/p (Dashboard)  Cycle accounts        Ctrl-q     Quit", theme::normal_style())),
+        Line::from(Span::styled(
+            " Navigation",
+            Style::default()
+                .fg(theme::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  j/k or Up/Down   Move cursor           1-5        Switch tabs",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  Tab/Shift-Tab    Cycle tabs            g/G        Top/Bottom",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  H/L              Prev/Next month       Ctrl-d/u   Page Down/Up",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  n/p (Dashboard)  Cycle accounts        Ctrl-q     Quit",
+            theme::normal_style(),
+        )),
         Line::from(""),
-        Line::from(Span::styled(" Actions", Style::default().fg(theme::YELLOW).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  :               Command mode           /          Search (live)", theme::normal_style())),
-        Line::from(Span::styled("  D (Transactions) Delete transaction    r (Categories) Toggle rules", theme::normal_style())),
-        Line::from(Span::styled("  Enter           Select/Confirm         Esc        Cancel/Back", theme::normal_style())),
-        Line::from(Span::styled("  +/- (Import)    Adjust field value", theme::normal_style())),
+        Line::from(Span::styled(
+            " Actions",
+            Style::default()
+                .fg(theme::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  :               Command mode           /          Search (live)",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  D (Transactions) Delete transaction    r (Categories) Toggle rules",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  Enter           Select/Confirm         Esc        Cancel/Back",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  +/- (Import)    Adjust field value",
+            theme::normal_style(),
+        )),
         Line::from(""),
-        Line::from(Span::styled(" Commands", Style::default().fg(theme::YELLOW).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            " Commands",
+            Style::default()
+                .fg(theme::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        )),
     ];
 
     // Build command list dynamically from COMMANDS registry

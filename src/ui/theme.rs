@@ -13,7 +13,10 @@ pub(crate) const OVERLAY: Color = Color::Rgb(69, 71, 90);
 pub(crate) const COMMAND_BG: Color = Color::Rgb(24, 24, 37);
 
 pub(crate) fn header_style() -> Style {
-    Style::default().fg(HEADER_FG).bg(HEADER_BG).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(HEADER_FG)
+        .bg(HEADER_BG)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub(crate) fn selected_style() -> Style {

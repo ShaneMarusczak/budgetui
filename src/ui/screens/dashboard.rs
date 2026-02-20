@@ -5,8 +5,8 @@ use ratatui::{
     widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph, Sparkline},
     Frame,
 };
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 
 use crate::ui::app::App;
 use crate::ui::theme;
@@ -16,7 +16,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),  // Summary cards
+            Constraint::Length(7), // Summary cards
             Constraint::Min(10),   // Charts
             Constraint::Length(3), // Monthly trend sparkline
         ])
@@ -42,13 +42,56 @@ fn render_summary_cards(f: &mut Frame, area: Rect, app: &App) {
     let income_count = app.transactions.iter().filter(|t| t.is_income()).count();
     let expense_count = app.transactions.iter().filter(|t| t.is_expense()).count();
 
-    render_card(f, cards[0], "Income", app.monthly_income, theme::GREEN, Some(format!("{income_count} txns")));
-    render_card(f, cards[1], "Expenses", app.monthly_expenses.abs(), theme::RED, Some(format!("{expense_count} txns")));
-    render_card(f, cards[2], "Net", net, if net >= Decimal::ZERO { theme::GREEN } else { theme::RED }, None);
-    render_card(f, cards[3], "Net Worth", app.net_worth, if app.net_worth >= Decimal::ZERO { theme::GREEN } else { theme::RED }, None);
+    render_card(
+        f,
+        cards[0],
+        "Income",
+        app.monthly_income,
+        theme::GREEN,
+        Some(format!("{income_count} txns")),
+    );
+    render_card(
+        f,
+        cards[1],
+        "Expenses",
+        app.monthly_expenses.abs(),
+        theme::RED,
+        Some(format!("{expense_count} txns")),
+    );
+    render_card(
+        f,
+        cards[2],
+        "Net",
+        net,
+        if net >= Decimal::ZERO {
+            theme::GREEN
+        } else {
+            theme::RED
+        },
+        None,
+    );
+    render_card(
+        f,
+        cards[3],
+        "Net Worth",
+        app.net_worth,
+        if app.net_worth >= Decimal::ZERO {
+            theme::GREEN
+        } else {
+            theme::RED
+        },
+        None,
+    );
 }
 
-fn render_card(f: &mut Frame, area: Rect, title: &str, amount: Decimal, color: ratatui::style::Color, subtitle: Option<String>) {
+fn render_card(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    amount: Decimal,
+    color: ratatui::style::Color,
+    subtitle: Option<String>,
+) {
     let sign = if amount < Decimal::ZERO { "-" } else { "" };
     let display = format!("{}${:.2}", sign, amount.abs());
 
@@ -57,7 +100,9 @@ fn render_card(f: &mut Frame, area: Rect, title: &str, amount: Decimal, color: r
         .border_style(Style::default().fg(theme::OVERLAY))
         .title(Span::styled(
             format!(" {title} "),
-            Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::TEXT_DIM)
+                .add_modifier(Modifier::BOLD),
         ));
 
     let sub_text = subtitle.unwrap_or_default();
@@ -83,7 +128,9 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Spending by Category ",
-                Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::TEXT_DIM)
+                    .add_modifier(Modifier::BOLD),
             ));
         let msg = Paragraph::new(Line::from(Span::styled(
             "No transactions for this month. Import a CSV with :i",
@@ -106,7 +153,11 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
                 .value(val)
                 .label(Line::from(label))
                 .style(Style::default().fg(theme::ACCENT))
-                .value_style(Style::default().fg(theme::TEXT).add_modifier(Modifier::BOLD))
+                .value_style(
+                    Style::default()
+                        .fg(theme::TEXT)
+                        .add_modifier(Modifier::BOLD),
+                )
         })
         .collect();
 
@@ -117,7 +168,9 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
                 .border_style(Style::default().fg(theme::OVERLAY))
                 .title(Span::styled(
                     " Spending by Category ",
-                    Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::TEXT_DIM)
+                        .add_modifier(Modifier::BOLD),
                 )),
         )
         .data(BarGroup::default().bars(&bars))
@@ -143,7 +196,9 @@ fn render_trend_sparkline(f: &mut Frame, area: Rect, app: &App) {
                 .border_style(Style::default().fg(theme::OVERLAY))
                 .title(Span::styled(
                     " Monthly Spending Trend ",
-                    Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::TEXT_DIM)
+                        .add_modifier(Modifier::BOLD),
                 )),
         )
         .data(&data)

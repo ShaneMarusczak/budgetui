@@ -65,17 +65,17 @@ fn test_small_amounts() {
 // ── AccountType ───────────────────────────────────────────────
 
 #[test]
-fn test_account_type_from_str() {
-    assert_eq!(AccountType::from_str("checking"), AccountType::Checking);
-    assert_eq!(AccountType::from_str("CHECKING"), AccountType::Checking);
-    assert_eq!(AccountType::from_str("savings"), AccountType::Savings);
-    assert_eq!(AccountType::from_str("credit card"), AccountType::CreditCard);
-    assert_eq!(AccountType::from_str("credit"), AccountType::CreditCard);
-    assert_eq!(AccountType::from_str("creditcard"), AccountType::CreditCard);
-    assert_eq!(AccountType::from_str("investment"), AccountType::Investment);
-    assert_eq!(AccountType::from_str("cash"), AccountType::Cash);
-    assert_eq!(AccountType::from_str("loan"), AccountType::Loan);
-    assert_eq!(AccountType::from_str("unknown"), AccountType::Other);
+fn test_account_type_parse() {
+    assert_eq!(AccountType::parse("checking"), AccountType::Checking);
+    assert_eq!(AccountType::parse("CHECKING"), AccountType::Checking);
+    assert_eq!(AccountType::parse("savings"), AccountType::Savings);
+    assert_eq!(AccountType::parse("credit card"), AccountType::CreditCard);
+    assert_eq!(AccountType::parse("credit"), AccountType::CreditCard);
+    assert_eq!(AccountType::parse("creditcard"), AccountType::CreditCard);
+    assert_eq!(AccountType::parse("investment"), AccountType::Investment);
+    assert_eq!(AccountType::parse("cash"), AccountType::Cash);
+    assert_eq!(AccountType::parse("loan"), AccountType::Loan);
+    assert_eq!(AccountType::parse("unknown"), AccountType::Other);
 }
 
 #[test]
@@ -105,10 +105,10 @@ fn test_account_type_all() {
 
 #[test]
 fn test_account_type_roundtrip() {
-    // Every type should roundtrip through as_str -> from_str
+    // Every type should roundtrip through as_str -> parse
     for t in AccountType::all() {
         let s = t.as_str();
-        let back = AccountType::from_str(s);
+        let back = AccountType::parse(s);
         assert_eq!(*t, back, "Roundtrip failed for {s}");
     }
 }

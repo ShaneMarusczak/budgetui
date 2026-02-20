@@ -57,19 +57,6 @@ CREATE TABLE IF NOT EXISTS import_rules (
     priority    INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS csv_profiles (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL UNIQUE,
-    date_column     INTEGER NOT NULL,
-    description_column INTEGER NOT NULL,
-    amount_column   INTEGER,
-    debit_column    INTEGER,
-    credit_column   INTEGER,
-    date_format     TEXT NOT NULL DEFAULT '%m/%d/%Y',
-    has_header      BOOLEAN NOT NULL DEFAULT 1,
-    skip_rows       INTEGER NOT NULL DEFAULT 0,
-    negate_amounts  BOOLEAN NOT NULL DEFAULT 0
-);
 "#;
 
 pub(crate) const CURRENT_VERSION: i32 = 1;

@@ -116,10 +116,20 @@ fn test_parse_amount_debit_credit_columns() {
         credit_column: Some(3),
         ..CsvProfile::default()
     };
-    let debit_row = vec!["01/15/2024".into(), "Coffee".into(), "4.50".into(), "".into()];
+    let debit_row = vec![
+        "01/15/2024".into(),
+        "Coffee".into(),
+        "4.50".into(),
+        "".into(),
+    ];
     assert_eq!(parse_amount(&debit_row, &profile).unwrap(), dec!(-4.50));
 
-    let credit_row = vec!["01/15/2024".into(), "Deposit".into(), "".into(), "1000.00".into()];
+    let credit_row = vec![
+        "01/15/2024".into(),
+        "Deposit".into(),
+        "".into(),
+        "1000.00".into(),
+    ];
     assert_eq!(parse_amount(&credit_row, &profile).unwrap(), dec!(1000.00));
 }
 
@@ -131,7 +141,12 @@ fn test_parse_amount_both_empty_debit_credit() {
         credit_column: Some(3),
         ..CsvProfile::default()
     };
-    let row = vec!["01/15/2024".into(), "Something".into(), "".into(), "".into()];
+    let row = vec![
+        "01/15/2024".into(),
+        "Something".into(),
+        "".into(),
+        "".into(),
+    ];
     assert_eq!(parse_amount(&row, &profile).unwrap(), Decimal::ZERO);
 }
 
@@ -248,9 +263,7 @@ fn test_parse_iso_dates() {
 #[test]
 fn test_parse_generates_import_hash() {
     let profile = CsvProfile::default();
-    let rows = vec![
-        vec!["01/15/2024".into(), "Coffee".into(), "-4.50".into()],
-    ];
+    let rows = vec![vec!["01/15/2024".into(), "Coffee".into(), "-4.50".into()]];
     let txns = CsvImporter::parse(&rows, &profile, 1).unwrap();
     assert!(!txns[0].import_hash.is_empty());
 }
@@ -258,9 +271,7 @@ fn test_parse_generates_import_hash() {
 #[test]
 fn test_parse_sets_account_id() {
     let profile = CsvProfile::default();
-    let rows = vec![
-        vec!["01/15/2024".into(), "Coffee".into(), "-4.50".into()],
-    ];
+    let rows = vec![vec!["01/15/2024".into(), "Coffee".into(), "-4.50".into()]];
     let txns = CsvImporter::parse(&rows, &profile, 42).unwrap();
     assert_eq!(txns[0].account_id, 42);
 }

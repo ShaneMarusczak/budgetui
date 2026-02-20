@@ -1,8 +1,8 @@
 mod schema;
 
 use anyhow::{Context, Result};
-use rust_decimal::Decimal;
 use rusqlite::{params, Connection};
+use rust_decimal::Decimal;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -77,9 +77,9 @@ impl Database {
     }
 
     fn seed_default_categories(&mut self) -> Result<()> {
-        let count: i64 =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))?;
         if count > 0 {
             return Ok(());
         }
@@ -173,16 +173,14 @@ impl Database {
             Ok(Account {
                 id: Some(row.get(0)?),
                 name: row.get(1)?,
-                account_type: AccountType::from_str(
-                    &row.get::<_, String>(2)?,
-                ),
+                account_type: AccountType::parse(&row.get::<_, String>(2)?),
                 institution: row.get(3)?,
                 currency: row.get(4)?,
                 notes: row.get(5)?,
                 created_at: row.get(6)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn get_account_by_id(&self, id: i64) -> Result<Option<Account>> {
@@ -193,7 +191,7 @@ impl Database {
                 Ok(Account {
                     id: Some(row.get(0)?),
                     name: row.get(1)?,
-                    account_type: AccountType::from_str(&row.get::<_, String>(2)?),
+                    account_type: AccountType::parse(&row.get::<_, String>(2)?),
                     institution: row.get(3)?,
                     currency: row.get(4)?,
                     notes: row.get(5)?,
@@ -284,17 +282,11 @@ impl Database {
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(aid) = account_id {
-            sql.push_str(&format!(
-                " AND t.account_id = ?{}",
-                param_values.len() + 1
-            ));
+            sql.push_str(&format!(" AND t.account_id = ?{}", param_values.len() + 1));
             param_values.push(Box::new(aid));
         }
         if let Some(cid) = category_id {
-            sql.push_str(&format!(
-                " AND t.category_id = ?{}",
-                param_values.len() + 1
-            ));
+            sql.push_str(&format!(" AND t.category_id = ?{}", param_values.len() + 1));
             param_values.push(Box::new(cid));
         }
         if let Some(s) = search {
@@ -305,10 +297,7 @@ impl Database {
             param_values.push(Box::new(format!("%{s}%")));
         }
         if let Some(m) = month {
-            sql.push_str(&format!(
-                " AND t.date LIKE ?{}",
-                param_values.len() + 1
-            ));
+            sql.push_str(&format!(" AND t.date LIKE ?{}", param_values.len() + 1));
             param_values.push(Box::new(format!("{m}%")));
         }
 
@@ -341,7 +330,7 @@ impl Database {
                 created_at: row.get(10)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn get_transaction_count(&self) -> Result<i64> {
@@ -384,23 +373,26 @@ impl Database {
         &self,
         month: Option<&str>,
     ) -> Result<Vec<Transaction>> {
-        let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(m) = month {
-            (
-                "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
+        let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            if let Some(m) = month {
+                (
+                    "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
                         t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at
                  FROM transactions t WHERE t.date LIKE ?1
-                 ORDER BY t.date DESC, t.id DESC".into(),
-                vec![Box::new(format!("{m}%"))],
-            )
-        } else {
-            (
-                "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
+                 ORDER BY t.date DESC, t.id DESC"
+                        .into(),
+                    vec![Box::new(format!("{m}%"))],
+                )
+            } else {
+                (
+                    "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
                         t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at
                  FROM transactions t
-                 ORDER BY t.date DESC, t.id DESC".into(),
-                vec![],
-            )
-        };
+                 ORDER BY t.date DESC, t.id DESC"
+                        .into(),
+                    vec![],
+                )
+            };
 
         let params_ref: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
@@ -422,7 +414,7 @@ impl Database {
                 created_at: row.get(10)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     // ── Categories ────────────────────────────────────────────
@@ -440,7 +432,7 @@ impl Database {
                 color: row.get(4)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn get_category_by_id(&self, id: i64) -> Result<Option<Category>> {
@@ -475,9 +467,9 @@ impl Database {
     // ── Budgets ───────────────────────────────────────────────
 
     pub(crate) fn get_budgets(&self, month: &str) -> Result<Vec<Budget>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, category_id, month, limit_amount FROM budgets WHERE month = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, category_id, month, limit_amount FROM budgets WHERE month = ?1")?;
         let rows = stmt.query_map(params![month], |row| {
             let amt_str: String = row.get(3)?;
             Ok(Budget {
@@ -487,7 +479,7 @@ impl Database {
                 limit_amount: Decimal::from_str(&amt_str).unwrap_or_default(),
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn upsert_budget(&self, budget: &Budget) -> Result<i64> {
@@ -525,7 +517,7 @@ impl Database {
                 priority: row.get(4)?,
             })
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn insert_import_rule(&self, rule: &ImportRule) -> Result<i64> {
@@ -559,7 +551,7 @@ impl Database {
             let amt_str: String = row.get(1)?;
             Ok((name, Decimal::from_str(&amt_str).unwrap_or_default()))
         })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub(crate) fn get_monthly_totals(&self, month: &str) -> Result<(Decimal, Decimal)> {
@@ -592,7 +584,10 @@ impl Database {
         Ok(Decimal::from_str(&total).unwrap_or_default())
     }
 
-    pub(crate) fn get_monthly_trend(&self, months: usize) -> Result<Vec<(String, Decimal, Decimal)>> {
+    pub(crate) fn get_monthly_trend(
+        &self,
+        months: usize,
+    ) -> Result<Vec<(String, Decimal, Decimal)>> {
         let mut stmt = self.conn.prepare(
             "SELECT strftime('%Y-%m', date) as month,
                     CAST(SUM(CASE WHEN CAST(amount AS REAL) > 0 THEN amount ELSE 0 END) AS TEXT) as income,
@@ -612,7 +607,7 @@ impl Database {
                 Decimal::from_str(&exp_str).unwrap_or_default(),
             ))
         })?;
-        let mut result: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+        let mut result: Vec<_> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         result.reverse();
         Ok(result)
     }

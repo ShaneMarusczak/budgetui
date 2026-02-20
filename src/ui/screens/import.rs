@@ -33,15 +33,23 @@ fn render_step_indicator(f: &mut Frame, area: Rect, app: &App) {
         (ImportStep::Preview, "3:Preview"),
         (ImportStep::Complete, "4:Done"),
     ];
-    let current_idx = steps.iter().position(|(s, _)| *s == app.import_step).unwrap_or(0);
+    let current_idx = steps
+        .iter()
+        .position(|(s, _)| *s == app.import_step)
+        .unwrap_or(0);
 
     let mut spans: Vec<Span> = Vec::new();
     spans.push(Span::styled(" ", Style::default().bg(theme::HEADER_BG)));
     for (i, (_, label)) in steps.iter().enumerate() {
         let style = if i == current_idx {
-            Style::default().fg(theme::HEADER_BG).bg(theme::ACCENT).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme::HEADER_BG)
+                .bg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD)
         } else if i < current_idx {
-            Style::default().fg(theme::GREEN).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme::GREEN)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme::TEXT_DIM)
         };
@@ -94,9 +102,15 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
             let name = if Some(path.as_path()) == app.file_browser_path.parent() {
                 "📁 ..".to_string()
             } else if path.is_dir() {
-                format!("📁 {}", path.file_name().and_then(|n| n.to_str()).unwrap_or("?"))
+                format!(
+                    "📁 {}",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                )
             } else {
-                format!("📄 {}", path.file_name().and_then(|n| n.to_str()).unwrap_or("?"))
+                format!(
+                    "📄 {}",
+                    path.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                )
             };
 
             let style = if i == app.file_browser_index {
@@ -127,7 +141,7 @@ fn render_column_mapper(f: &mut Frame, area: Rect, app: &App) {
         .constraints([
             Constraint::Length(3),  // Detected bank
             Constraint::Length(12), // Column mapping fields
-            Constraint::Min(5),    // Sample data
+            Constraint::Min(5),     // Sample data
         ])
         .split(area);
 
@@ -137,25 +151,70 @@ fn render_column_mapper(f: &mut Frame, area: Rect, app: &App) {
     } else {
         "Custom CSV - set column mappings below".into()
     };
-    let status = Paragraph::new(Line::from(Span::styled(bank_msg, Style::default().fg(theme::ACCENT))))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::OVERLAY))
-                .title(Span::styled(" Column Mapping ", Style::default().fg(theme::TEXT_DIM).add_modifier(Modifier::BOLD))),
-        );
+    let status = Paragraph::new(Line::from(Span::styled(
+        bank_msg,
+        Style::default().fg(theme::ACCENT),
+    )))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::OVERLAY))
+            .title(Span::styled(
+                " Column Mapping ",
+                Style::default()
+                    .fg(theme::TEXT_DIM)
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
     f.render_widget(status, chunks[0]);
 
     // Column mapping fields
     let fields = [
         ("Date Column", format!("{}", app.import_profile.date_column)),
-        ("Description Column", format!("{}", app.import_profile.description_column)),
-        ("Amount Column", app.import_profile.amount_column.map(|c| c.to_string()).unwrap_or_else(|| "—".into())),
-        ("Debit Column", app.import_profile.debit_column.map(|c| c.to_string()).unwrap_or_else(|| "—".into())),
-        ("Credit Column", app.import_profile.credit_column.map(|c| c.to_string()).unwrap_or_else(|| "—".into())),
+        (
+            "Description Column",
+            format!("{}", app.import_profile.description_column),
+        ),
+        (
+            "Amount Column",
+            app.import_profile
+                .amount_column
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "—".into()),
+        ),
+        (
+            "Debit Column",
+            app.import_profile
+                .debit_column
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "—".into()),
+        ),
+        (
+            "Credit Column",
+            app.import_profile
+                .credit_column
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "—".into()),
+        ),
         ("Date Format", app.import_profile.date_format.clone()),
-        ("Has Header", if app.import_profile.has_header { "Yes" } else { "No" }.into()),
-        ("Negate Amounts", if app.import_profile.negate_amounts { "Yes" } else { "No" }.into()),
+        (
+            "Has Header",
+            if app.import_profile.has_header {
+                "Yes"
+            } else {
+                "No"
+            }
+            .into(),
+        ),
+        (
+            "Negate Amounts",
+            if app.import_profile.negate_amounts {
+                "Yes"
+            } else {
+                "No"
+            }
+            .into(),
+        ),
     ];
 
     let field_items: Vec<ListItem> = fields
@@ -208,18 +267,17 @@ fn render_column_mapper(f: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let col_count = app.import_headers.len().max(1);
-    let widths: Vec<Constraint> = (0..col_count)
-        .map(|_| Constraint::Min(12))
-        .collect();
+    let widths: Vec<Constraint> = (0..col_count).map(|_| Constraint::Min(12)).collect();
 
-    let table = Table::new(sample_rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::OVERLAY))
-                .title(Span::styled(" Sample Data (first 5 rows) ", theme::dim_style())),
-        );
+    let table = Table::new(sample_rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::OVERLAY))
+            .title(Span::styled(
+                " Sample Data (first 5 rows) ",
+                theme::dim_style(),
+            )),
+    );
     f.render_widget(table, chunks[2]);
 }
 
@@ -242,10 +300,7 @@ fn render_preview(f: &mut Frame, area: Rect, app: &App) {
             Row::new(vec![
                 Cell::from(txn.date.as_str()),
                 Cell::from(truncate(&txn.description, 50)),
-                Cell::from(Span::styled(
-                    format!("${:.2}", txn.amount),
-                    amount_style,
-                )),
+                Cell::from(Span::styled(format!("${:.2}", txn.amount), amount_style)),
             ])
         })
         .collect();
@@ -256,22 +311,20 @@ fn render_preview(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(14),
     ];
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::OVERLAY))
-                .title(Span::styled(
-                    format!(
-                        " Preview: {} transactions | Enter to commit, Esc to go back ",
-                        app.import_preview.len()
-                    ),
-                    Style::default()
-                        .fg(theme::ACCENT)
-                        .add_modifier(Modifier::BOLD),
-                )),
-        );
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::OVERLAY))
+            .title(Span::styled(
+                format!(
+                    " Preview: {} transactions | Enter to commit, Esc to go back ",
+                    app.import_preview.len()
+                ),
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
     f.render_widget(table, area);
 }
 
@@ -300,4 +353,3 @@ fn render_complete(f: &mut Frame, area: Rect, app: &App) {
     );
     f.render_widget(msg, area);
 }
-

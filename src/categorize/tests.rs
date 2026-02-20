@@ -56,10 +56,7 @@ fn test_categorize_no_match() {
 
 #[test]
 fn test_categorize_first_match_wins() {
-    let rules = vec![
-        make_rule("shop", 1),
-        make_rule("coffee shop", 2),
-    ];
+    let rules = vec![make_rule("shop", 1), make_rule("coffee shop", 2)];
     let cat = Categorizer::new(&rules);
     // "shop" matches first
     assert_eq!(cat.categorize("Coffee Shop"), Some(1));

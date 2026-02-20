@@ -22,7 +22,7 @@ impl AccountType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "checking" => Self::Checking,
             "savings" => Self::Savings,
