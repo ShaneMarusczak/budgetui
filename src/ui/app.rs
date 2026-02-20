@@ -115,8 +115,10 @@ pub(crate) struct App {
     // Categories
     pub(crate) categories: Vec<Category>,
     pub(crate) category_index: usize,
+    pub(crate) category_scroll: usize,
     pub(crate) import_rules: Vec<ImportRule>,
     pub(crate) rule_index: usize,
+    pub(crate) rule_scroll: usize,
     pub(crate) category_view_rules: bool,
 
     // Accounts
@@ -126,6 +128,7 @@ pub(crate) struct App {
     // Budgets
     pub(crate) budgets: Vec<Budget>,
     pub(crate) budget_index: usize,
+    pub(crate) budget_scroll: usize,
 
     // Import state
     pub(crate) import_step: ImportStep,
@@ -184,8 +187,10 @@ impl App {
 
             categories: Vec::new(),
             category_index: 0,
+            category_scroll: 0,
             import_rules: Vec::new(),
             rule_index: 0,
+            rule_scroll: 0,
             category_view_rules: false,
 
             accounts: Vec::new(),
@@ -193,6 +198,7 @@ impl App {
 
             budgets: Vec::new(),
             budget_index: 0,
+            budget_scroll: 0,
 
             import_step: ImportStep::SelectFile,
             import_path: String::new(),

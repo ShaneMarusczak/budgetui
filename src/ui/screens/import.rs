@@ -351,10 +351,15 @@ fn render_preview(f: &mut Frame, area: Rect, app: &App) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
-                format!(
-                    " Preview: {} transactions | Enter to commit, Esc to go back ",
-                    app.import_preview.len()
-                ),
+                {
+                    let total = app.import_preview.len();
+                    let shown = total.min(50);
+                    if shown < total {
+                        format!(" Preview: showing {shown} of {total} transactions | Enter to commit, Esc to go back ")
+                    } else {
+                        format!(" Preview: {total} transactions | Enter to commit, Esc to go back ")
+                    }
+                },
                 Style::default()
                     .fg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD),
@@ -367,7 +372,7 @@ fn render_complete(f: &mut Frame, area: Rect, app: &App) {
     let msg = Paragraph::new(vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Import complete!",
+            "✓ Import complete!",
             Style::default()
                 .fg(theme::GREEN)
                 .add_modifier(Modifier::BOLD),
@@ -375,10 +380,12 @@ fn render_complete(f: &mut Frame, area: Rect, app: &App) {
         Line::from(""),
         Line::from(Span::styled(&app.status_message, theme::normal_style())),
         Line::from(""),
-        Line::from(Span::styled(
-            "Press Enter to view transactions, or :d for dashboard",
-            theme::dim_style(),
-        )),
+        Line::from(vec![
+            Span::styled("Enter ", Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled("to finish  ", theme::dim_style()),
+            Span::styled("i ", Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled("import another file", theme::dim_style()),
+        ]),
     ])
     .centered()
     .block(

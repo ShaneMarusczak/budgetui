@@ -410,6 +410,12 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         KeyCode::Char('D') if app.screen == Screen::Transactions => {
             commands::handle_command("delete-txn", app, db)?;
         }
+        KeyCode::Char('i')
+            if app.screen == Screen::Import && app.import_step == ImportStep::Complete =>
+        {
+            app.import_step = ImportStep::SelectFile;
+            app.refresh_file_browser();
+        }
         _ => {}
     }
     Ok(())
@@ -634,13 +640,13 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
             app.input_mode = InputMode::Normal;
             app.confirm_message.clear();
         }
-        _ => {
-            // Any other key = cancel
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
             app.pending_action = None;
             app.input_mode = InputMode::Normal;
             app.confirm_message.clear();
             app.set_status("Cancelled");
         }
+        _ => {} // Ignore other keys
     }
     Ok(())
 }
@@ -674,12 +680,19 @@ fn handle_move_down(app: &mut App) {
             }
         }
         Screen::Categories => {
+            let page = app.visible_rows.max(1);
             if app.category_view_rules {
                 if app.rule_index + 1 < app.import_rules.len() {
                     app.rule_index += 1;
+                    if app.rule_index >= app.rule_scroll + page {
+                        app.rule_scroll = app.rule_index.saturating_sub(page - 1);
+                    }
                 }
             } else if app.category_index + 1 < app.categories.len() {
                 app.category_index += 1;
+                if app.category_index >= app.category_scroll + page {
+                    app.category_scroll = app.category_index.saturating_sub(page - 1);
+                }
             }
         }
         Screen::Import => match app.import_step {
@@ -703,6 +716,10 @@ fn handle_move_down(app: &mut App) {
         Screen::Budgets => {
             if app.budget_index + 1 < app.budgets.len() {
                 app.budget_index += 1;
+                let page = app.visible_rows.max(1);
+                if app.budget_index >= app.budget_scroll + page {
+                    app.budget_scroll = app.budget_index.saturating_sub(page - 1);
+                }
             }
         }
         _ => {}
@@ -720,8 +737,14 @@ fn handle_move_up(app: &mut App) {
         Screen::Categories => {
             if app.category_view_rules {
                 app.rule_index = app.rule_index.saturating_sub(1);
+                if app.rule_index < app.rule_scroll {
+                    app.rule_scroll = app.rule_index;
+                }
             } else {
                 app.category_index = app.category_index.saturating_sub(1);
+                if app.category_index < app.category_scroll {
+                    app.category_scroll = app.category_index;
+                }
             }
         }
         Screen::Import => match app.import_step {
@@ -743,6 +766,9 @@ fn handle_move_up(app: &mut App) {
         },
         Screen::Budgets => {
             app.budget_index = app.budget_index.saturating_sub(1);
+            if app.budget_index < app.budget_scroll {
+                app.budget_scroll = app.budget_index;
+            }
         }
         _ => {}
     }
@@ -911,9 +937,15 @@ fn handle_goto_top(app: &mut App) {
         Screen::Categories => {
             if app.category_view_rules {
                 app.rule_index = 0;
+                app.rule_scroll = 0;
             } else {
                 app.category_index = 0;
+                app.category_scroll = 0;
             }
+        }
+        Screen::Budgets => {
+            app.budget_index = 0;
+            app.budget_scroll = 0;
         }
         Screen::Import if app.import_step == ImportStep::SelectFile => {
             app.file_browser_index = 0;
@@ -933,12 +965,22 @@ fn handle_goto_bottom(app: &mut App) {
             }
         }
         Screen::Categories => {
+            let page = app.visible_rows.max(1);
             if app.category_view_rules {
                 if !app.import_rules.is_empty() {
                     app.rule_index = app.import_rules.len() - 1;
+                    app.rule_scroll = app.rule_index.saturating_sub(page - 1);
                 }
             } else if !app.categories.is_empty() {
                 app.category_index = app.categories.len() - 1;
+                app.category_scroll = app.category_index.saturating_sub(page - 1);
+            }
+        }
+        Screen::Budgets => {
+            if !app.budgets.is_empty() {
+                app.budget_index = app.budgets.len() - 1;
+                let page = app.visible_rows.max(1);
+                app.budget_scroll = app.budget_index.saturating_sub(page - 1);
             }
         }
         Screen::Import if app.import_step == ImportStep::SelectFile => {

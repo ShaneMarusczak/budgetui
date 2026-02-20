@@ -20,11 +20,13 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
-    // Build tree structure
+    // Build tree structure with viewport scrolling
     let items: Vec<ListItem> = app
         .categories
         .iter()
         .enumerate()
+        .skip(app.category_scroll)
+        .take(app.visible_rows)
         .map(|(i, cat)| {
             let prefix = if cat.parent_id.is_some() {
                 "  └ "
@@ -126,6 +128,8 @@ fn render_rules_list(f: &mut Frame, area: Rect, app: &App) {
         .import_rules
         .iter()
         .enumerate()
+        .skip(app.rule_scroll)
+        .take(app.visible_rows)
         .map(|(i, rule)| {
             let cat_name = app
                 .categories
