@@ -1,1 +1,35 @@
+# Build artifacts
 /target
+
+# Cargo lock is committed for binaries (keep it)
+# Cargo.lock
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+
+# Database files (local user data, not repo data)
+*.db
+*.db-shm
+*.db-wal
+
+# Coverage / profiling
+*.profraw
+*.profdata
+lcov.info
+tarpaulin-report.html
+
+# Crash logs
+*.dSYM/
