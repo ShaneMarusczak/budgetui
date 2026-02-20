@@ -16,9 +16,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS categories (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     name      TEXT NOT NULL UNIQUE,
-    parent_id INTEGER REFERENCES categories(id),
-    icon      TEXT NOT NULL DEFAULT '',
-    color     TEXT NOT NULL DEFAULT ''
+    parent_id INTEGER REFERENCES categories(id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -61,9 +59,10 @@ CREATE TABLE IF NOT EXISTS import_rules (
 
 pub(crate) const CURRENT_VERSION: i32 = 1;
 
-/// Migrations from version N to N+1.
-/// Each entry is (from_version, sql).
+/// Incremental migrations. Each entry is (target_version, sql) where
+/// `target_version` is the schema version that results from applying the SQL.
+/// A migration runs when the current DB version < target_version.
 pub(crate) const MIGRATIONS: &[(i32, &str)] = &[
     // Future migrations go here:
-    // (1, "ALTER TABLE transactions ADD COLUMN recurring BOOLEAN NOT NULL DEFAULT 0;"),
+    // (2, "ALTER TABLE transactions ADD COLUMN recurring BOOLEAN NOT NULL DEFAULT 0;"),
 ];

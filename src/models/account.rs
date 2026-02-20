@@ -45,6 +45,20 @@ impl AccountType {
             Self::Other,
         ]
     }
+
+    /// Account types that represent debit (asset) accounts.
+    pub fn debit_type_strs() -> &'static [&'static str] {
+        &["Checking", "Savings", "Cash", "Investment", "Other"]
+    }
+
+    /// Account types that represent credit (liability) accounts.
+    pub fn credit_type_strs() -> &'static [&'static str] {
+        &["Credit Card", "Loan"]
+    }
+
+    pub fn is_credit(&self) -> bool {
+        matches!(self, Self::CreditCard | Self::Loan)
+    }
 }
 
 impl std::fmt::Display for AccountType {

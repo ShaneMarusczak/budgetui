@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -7,14 +7,12 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
-use std::path::Path;
 
 use crate::db::Database;
 use crate::models::{Account, AccountType};
-use crate::ui::app::{App, ImportStep, InputMode, Screen};
+use crate::ui::app::{App, ImportStep, InputMode, PendingAction, Screen};
 use crate::ui::commands;
-
-// ── TUI mode ─────────────────────────────────────────────────
+use crate::ui::util::{scroll_down, scroll_to_bottom, scroll_to_top, scroll_up};
 
 pub(crate) fn as_tui(db: &mut Database) -> Result<()> {
     let mut app = App::new();
@@ -43,251 +41,6 @@ pub(crate) fn as_tui(db: &mut Database) -> Result<()> {
     result
 }
 
-// ── CLI mode ─────────────────────────────────────────────────
-
-pub(crate) fn as_cli(args: &[String], db: &mut Database) -> Result<()> {
-    match args[1].as_str() {
-        "import" => cli_import(&args[2..], db),
-        "export" => cli_export(&args[2..], db),
-        "summary" | "s" => cli_summary(&args[2..], db),
-        "accounts" => cli_accounts(db),
-        "--help" | "-h" | "help" => {
-            print_usage();
-            Ok(())
-        }
-        "--version" | "-V" | "version" => {
-            println!("budgetui {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
-        other => {
-            eprintln!("Unknown command: {other}");
-            eprintln!();
-            print_usage();
-            std::process::exit(1);
-        }
-    }
-}
-
-fn print_usage() {
-    println!("BudgeTUI — local-only personal finance tracker");
-    println!();
-    println!("Usage: budgetui [command]");
-    println!();
-    println!("Commands:");
-    println!("  (none)                        Launch interactive TUI");
-    println!("  import <file.csv>             Import a CSV file (auto-detects bank format)");
-    println!("    --account <name>            Account to import into (default: first account)");
-    println!("  export [path]                 Export transactions to CSV");
-    println!("    --month <YYYY-MM>           Month to export (default: current)");
-    println!("  summary [YYYY-MM]             Print monthly financial summary");
-    println!("  accounts                      List all accounts");
-    println!("  --help, -h                    Show this help");
-    println!("  --version, -V                 Show version");
-}
-
-fn cli_import(args: &[String], db: &mut Database) -> Result<()> {
-    if args.is_empty() {
-        eprintln!("Usage: budgetui import <file.csv> [--account <name>]");
-        std::process::exit(1);
-    }
-
-    let file_path = &args[0];
-    let path = Path::new(file_path);
-    if !path.exists() {
-        anyhow::bail!("File not found: {file_path}");
-    }
-
-    // Parse --account flag
-    let account_name = args
-        .windows(2)
-        .find(|w| w[0] == "--account")
-        .map(|w| w[1].as_str());
-
-    // Load and parse CSV
-    let (headers, rows) = crate::import::CsvImporter::preview(path)?;
-    let first_row = rows.first().cloned().unwrap_or_default();
-
-    let profile = if let Some(detected) = crate::import::detect_bank_format(&headers, &first_row) {
-        println!("Detected format: {}", detected.name);
-        detected
-    } else {
-        println!("Using default CSV profile (date=0, desc=1, amount=2)");
-        crate::import::CsvProfile::default()
-    };
-
-    let account_id = if let Some(name) = account_name {
-        let accounts = db.get_accounts()?;
-        accounts
-            .iter()
-            .find(|a| a.name.to_lowercase() == name.to_lowercase())
-            .and_then(|a| a.id)
-            .ok_or_else(|| anyhow::anyhow!("Account '{name}' not found"))?
-    } else {
-        let accounts = db.get_accounts()?;
-        if accounts.is_empty() {
-            anyhow::bail!("No accounts found. Create one first, or use --account <name>");
-        } else if accounts.len() == 1 {
-            // Only one account — use it automatically
-            accounts[0]
-                .id
-                .ok_or_else(|| anyhow::anyhow!("Account has no ID"))?
-        } else {
-            // Multiple accounts — user must specify
-            eprintln!("Multiple accounts found. Use --account <name> to specify:");
-            for acct in &accounts {
-                eprintln!("  --account \"{}\"  ({})", acct.name, acct.account_type);
-            }
-            std::process::exit(1);
-        }
-    };
-
-    let mut txns = crate::import::CsvImporter::parse(&rows, &profile, account_id)?;
-    println!("Parsed {} transactions", txns.len());
-
-    // Auto-categorize
-    let rules = db.get_import_rules()?;
-    if !rules.is_empty() {
-        let categorizer = crate::categorize::Categorizer::new(&rules);
-        categorizer.categorize_batch(&mut txns);
-        let categorized = txns.iter().filter(|t| t.category_id.is_some()).count();
-        println!("Auto-categorized {categorized}/{} transactions", txns.len());
-    }
-
-    // Insert
-    let count = db.insert_transactions_batch(&txns)?;
-    let dupes = txns.len() - count;
-    println!("Imported {count} new transactions ({dupes} duplicates skipped)");
-
-    Ok(())
-}
-
-fn cli_export(args: &[String], db: &mut Database) -> Result<()> {
-    // Parse --month flag
-    let month = args
-        .windows(2)
-        .find(|w| w[0] == "--month")
-        .map(|w| w[1].clone())
-        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
-
-    // Output path is the first non-flag argument
-    let output_path = args
-        .first()
-        .filter(|a| !a.starts_with('-'))
-        .map(|a| shellexpand(a))
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-            format!("{home}/budgetui-export-{month}.csv")
-        });
-
-    let txns = db.get_all_transactions_for_export(Some(&month))?;
-    if txns.is_empty() {
-        println!("No transactions for {month}");
-        return Ok(());
-    }
-
-    let categories = db.get_categories()?;
-    let accounts = db.get_accounts()?;
-
-    let mut wtr = csv::Writer::from_path(&output_path).context("Failed to create export file")?;
-    wtr.write_record([
-        "Date",
-        "Description",
-        "Amount",
-        "Category",
-        "Account",
-        "Notes",
-    ])?;
-
-    for txn in &txns {
-        let cat_name = txn
-            .category_id
-            .and_then(|cid| categories.iter().find(|c| c.id == Some(cid)))
-            .map(|c| c.name.as_str())
-            .unwrap_or("");
-        let acct_name = accounts
-            .iter()
-            .find(|a| a.id == Some(txn.account_id))
-            .map(|a| a.name.as_str())
-            .unwrap_or("");
-        wtr.write_record([
-            &txn.date,
-            &txn.description,
-            &txn.amount.to_string(),
-            cat_name,
-            acct_name,
-            &txn.notes,
-        ])?;
-    }
-
-    wtr.flush()?;
-    println!("Exported {} transactions to {output_path}", txns.len());
-    Ok(())
-}
-
-fn cli_summary(args: &[String], db: &mut Database) -> Result<()> {
-    let month = args
-        .first()
-        .filter(|a| !a.starts_with('-'))
-        .cloned()
-        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m").to_string());
-
-    let (income, expenses) = db.get_monthly_totals(&month)?;
-    let net = income + expenses;
-    let net_worth = db.get_net_worth()?;
-    let spending = db.get_spending_by_category(&month)?;
-    let txn_count = db.get_transaction_count()?;
-
-    println!("BudgeTUI — {month}");
-    println!("{}", "─".repeat(40));
-    println!("  Income:     ${:.2}", income);
-    println!("  Expenses:   ${:.2}", expenses.abs());
-    println!("  Net:        ${:.2}", net);
-    println!("  Net Worth:  ${:.2}", net_worth);
-    println!("  Total Txns: {txn_count}");
-
-    if !spending.is_empty() {
-        println!();
-        println!("Spending by Category:");
-        for (name, amount) in &spending {
-            println!("  {name:<24} ${:.2}", amount.abs());
-        }
-    }
-
-    Ok(())
-}
-
-fn cli_accounts(db: &mut Database) -> Result<()> {
-    let accounts = db.get_accounts()?;
-    if accounts.is_empty() {
-        println!("No accounts");
-        return Ok(());
-    }
-
-    println!("{:<4} {:<20} {:<15} Institution", "ID", "Name", "Type");
-    println!("{}", "─".repeat(55));
-    for acct in &accounts {
-        println!(
-            "{:<4} {:<20} {:<15} {}",
-            acct.id.unwrap_or(0),
-            acct.name,
-            acct.account_type,
-            acct.institution,
-        );
-    }
-    Ok(())
-}
-
-fn shellexpand(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        format!("{home}/{rest}")
-    } else {
-        path.to_string()
-    }
-}
-
-// ── TUI event loop ───────────────────────────────────────────
-
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
@@ -295,8 +48,7 @@ fn run_app(
 ) -> Result<()> {
     while app.running {
         terminal.draw(|f| {
-            // Update visible rows based on terminal height (subtract outer chrome only)
-            let content_height = f.area().height.saturating_sub(3) as usize; // 1 tab + 1 status + 1 cmd
+            let content_height = f.area().height.saturating_sub(3) as usize;
             app.visible_rows = content_height.max(1);
             crate::ui::render::render(f, app);
         })?;
@@ -325,7 +77,6 @@ fn run_app(
 // ── Input handlers ───────────────────────────────────────────
 
 fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
-    // File browser path input has its own key handling
     if app.screen == Screen::Import
         && app.import_step == ImportStep::SelectFile
         && app.file_browser_input_focused
@@ -333,12 +84,10 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         return handle_file_browser_input(key, app);
     }
 
-    // Categorize step has its own key handling (category picker + new category input)
     if app.screen == Screen::Import && app.import_step == ImportStep::Categorize {
         return handle_categorize_input(key, app, db);
     }
 
-    // Account picker step has its own key handling (list + new account form)
     if app.screen == Screen::Import && app.import_step == ImportStep::SelectAccount {
         return handle_select_account_input(key, app, db);
     }
@@ -435,7 +184,28 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
             }
         }
         KeyCode::Char('D') if app.screen == Screen::Transactions => {
-            commands::handle_command("delete-txn", app, db)?;
+            if app.selected_transactions.is_empty() {
+                commands::handle_command("delete-txn", app, db)?;
+            } else {
+                let ids: Vec<i64> = app.selected_transactions.iter().copied().collect();
+                let count = ids.len();
+                app.confirm_message = format!(
+                    "Delete {count} transaction{}?",
+                    if count == 1 { "" } else { "s" }
+                );
+                app.pending_action = Some(PendingAction::DeleteTransactions { ids, count });
+                app.input_mode = InputMode::Confirm;
+            }
+        }
+        KeyCode::Char(' ') if app.screen == Screen::Transactions => {
+            if let Some(txn) = app.transactions.get(app.transaction_index) {
+                if let Some(id) = txn.id {
+                    if !app.selected_transactions.remove(&id) {
+                        app.selected_transactions.insert(id);
+                    }
+                }
+            }
+            handle_move_down(app);
         }
         KeyCode::Char('i')
             if app.screen == Screen::Import && app.import_step == ImportStep::Complete =>
@@ -457,7 +227,6 @@ fn handle_file_browser_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         }
         KeyCode::Backspace => {
             if app.file_browser_filter.pop().is_none() {
-                // Filter was already empty — go to parent directory
                 if let Some(parent) = app.file_browser_path.parent().map(|p| p.to_path_buf()) {
                     app.file_browser_path = parent;
                     app.refresh_file_browser();
@@ -492,7 +261,6 @@ fn handle_file_browser_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
                     }
                 }
             } else {
-                // Multiple matches — switch to list to pick one
                 app.file_browser_input_focused = false;
             }
         }
@@ -503,7 +271,6 @@ fn handle_file_browser_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
 
 fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
     if app.import_cat_creating {
-        // Typing a new category name
         match key.code {
             KeyCode::Char(c) => {
                 app.import_cat_new_name.push(c);
@@ -520,11 +287,9 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
             KeyCode::Enter => {
                 let name = app.import_cat_new_name.trim().to_string();
                 if !name.is_empty() {
-                    // Create the category in DB
                     let cat = crate::models::Category::new(name.clone());
                     let cat_id = db.insert_category(&cat)?;
 
-                    // Generate and save a rule for this description
                     if let Some((desc, _)) = app.import_cat_descriptions.get(app.import_cat_index) {
                         if let Ok(pattern) = crate::categorize::suggest_rule(desc) {
                             let rule = crate::models::ImportRule::new_contains(pattern, cat_id);
@@ -532,7 +297,6 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
                         }
                     }
 
-                    // Apply category to all matching transactions
                     app.apply_category_to_current(cat_id);
                     app.refresh_categories(db)?;
 
@@ -559,35 +323,32 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
         return Ok(());
     }
 
-    // Normal category picker navigation
     let page = app.categorize_visible_rows();
+    let cat_len = app.categories.len();
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.import_cat_selected + 1 < app.categories.len() {
-                app.import_cat_selected += 1;
-                if app.import_cat_selected >= app.import_cat_scroll + page {
-                    app.import_cat_scroll = app.import_cat_selected.saturating_sub(page - 1);
-                }
-            }
+            scroll_down(
+                &mut app.import_cat_selected,
+                &mut app.import_cat_scroll,
+                cat_len,
+                page,
+            );
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.import_cat_selected = app.import_cat_selected.saturating_sub(1);
-            if app.import_cat_selected < app.import_cat_scroll {
-                app.import_cat_scroll = app.import_cat_selected;
-            }
+            scroll_up(&mut app.import_cat_selected, &mut app.import_cat_scroll);
         }
         KeyCode::Char('g') => {
-            app.import_cat_selected = 0;
-            app.import_cat_scroll = 0;
+            scroll_to_top(&mut app.import_cat_selected, &mut app.import_cat_scroll);
         }
         KeyCode::Char('G') => {
-            if !app.categories.is_empty() {
-                app.import_cat_selected = app.categories.len() - 1;
-                app.import_cat_scroll = app.import_cat_selected.saturating_sub(page - 1);
-            }
+            scroll_to_bottom(
+                &mut app.import_cat_selected,
+                &mut app.import_cat_scroll,
+                cat_len,
+                page,
+            );
         }
         KeyCode::Char('s') => {
-            // Skip this description
             if !app.advance_categorize() {
                 commit_import(app, db)?;
             } else {
@@ -595,21 +356,17 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
             }
         }
         KeyCode::Char('S') => {
-            // Skip all remaining
             commit_import(app, db)?;
         }
         KeyCode::Char('n') => {
-            // Start typing a new category name
             app.import_cat_creating = true;
             app.import_cat_new_name.clear();
         }
         KeyCode::Enter => {
-            // Assign the selected category
             if let Some(cat) = app.categories.get(app.import_cat_selected) {
                 if let Some(cat_id) = cat.id {
                     let cat_name = cat.name.clone();
 
-                    // Generate and save a rule
                     if let Some((desc, _)) = app.import_cat_descriptions.get(app.import_cat_index) {
                         if let Ok(pattern) = crate::categorize::suggest_rule(desc) {
                             let rule =
@@ -619,7 +376,6 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
                         }
                     }
 
-                    // Apply to all matching transactions
                     app.apply_category_to_current(cat_id);
 
                     let count = app
@@ -639,28 +395,22 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
             }
         }
         KeyCode::Esc => {
-            // Go back to preview step (abandon categorization, keep any changes already made)
             app.import_step = ImportStep::Preview;
             app.set_status("Back to preview — categories already assigned will be kept");
         }
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let half_page = page / 2;
-            for _ in 0..half_page {
-                if app.import_cat_selected + 1 < app.categories.len() {
-                    app.import_cat_selected += 1;
-                }
-            }
-            if app.import_cat_selected >= app.import_cat_scroll + page {
-                app.import_cat_scroll = app.import_cat_selected.saturating_sub(page - 1);
+            for _ in 0..page / 2 {
+                scroll_down(
+                    &mut app.import_cat_selected,
+                    &mut app.import_cat_scroll,
+                    cat_len,
+                    page,
+                );
             }
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let half_page = page / 2;
-            for _ in 0..half_page {
-                app.import_cat_selected = app.import_cat_selected.saturating_sub(1);
-            }
-            if app.import_cat_selected < app.import_cat_scroll {
-                app.import_cat_scroll = app.import_cat_selected;
+            for _ in 0..page / 2 {
+                scroll_up(&mut app.import_cat_selected, &mut app.import_cat_scroll);
             }
         }
         _ => {}
@@ -674,7 +424,6 @@ fn handle_select_account_input(
     db: &mut Database,
 ) -> Result<()> {
     if app.import_creating_account {
-        // New account form: typing name, cycling type, or confirming
         match key.code {
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 let types = AccountType::all();
@@ -689,7 +438,6 @@ fn handle_select_account_input(
                 };
             }
             KeyCode::Tab => {
-                // Tab cycles type forward (same as +)
                 let types = AccountType::all();
                 app.import_new_account_type = (app.import_new_account_type + 1) % types.len();
             }
@@ -712,14 +460,12 @@ fn handle_select_account_input(
                         .get(app.import_new_account_type)
                         .cloned()
                         .unwrap_or(AccountType::Checking);
-                    let is_credit =
-                        matches!(acct_type, AccountType::CreditCard | AccountType::Loan);
+                    let is_credit = acct_type.is_credit();
                     let acct = Account::new(name.clone(), acct_type, String::new());
                     let id = db.insert_account(&acct)?;
                     app.import_account_id = Some(id);
                     app.refresh_accounts(db)?;
 
-                    // Derive is_credit_account from new account type
                     app.import_profile.is_credit_account = is_credit;
                     if app.import_detected_bank.is_none() {
                         app.import_profile.negate_amounts = is_credit;
@@ -739,34 +485,35 @@ fn handle_select_account_input(
         return Ok(());
     }
 
-    // Normal account list navigation
     let page = app.import_account_page();
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.import_account_index + 1 < app.accounts.len() {
-                app.import_account_index += 1;
-                if app.import_account_index >= app.import_account_scroll + page {
-                    app.import_account_scroll = app.import_account_index.saturating_sub(page - 1);
-                }
-            }
+            scroll_down(
+                &mut app.import_account_index,
+                &mut app.import_account_scroll,
+                app.accounts.len(),
+                page,
+            );
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.import_account_index = app.import_account_index.saturating_sub(1);
-            if app.import_account_index < app.import_account_scroll {
-                app.import_account_scroll = app.import_account_index;
-            }
+            scroll_up(
+                &mut app.import_account_index,
+                &mut app.import_account_scroll,
+            );
         }
         KeyCode::Char('g') => {
-            app.import_account_index = 0;
-            app.import_account_scroll = 0;
+            scroll_to_top(
+                &mut app.import_account_index,
+                &mut app.import_account_scroll,
+            );
         }
         KeyCode::Char('G') => {
-            if !app.accounts.is_empty() {
-                app.import_account_index = app.accounts.len() - 1;
-                app.import_account_scroll = app
-                    .import_account_index
-                    .saturating_sub(page.saturating_sub(1));
-            }
+            scroll_to_bottom(
+                &mut app.import_account_index,
+                &mut app.import_account_scroll,
+                app.accounts.len(),
+                page,
+            );
         }
         KeyCode::Char('n') => {
             app.import_creating_account = true;
@@ -775,10 +522,7 @@ fn handle_select_account_input(
         KeyCode::Enter => {
             if let Some(acct) = app.accounts.get(app.import_account_index) {
                 app.import_account_id = acct.id;
-                let is_credit = matches!(
-                    acct.account_type,
-                    AccountType::CreditCard | AccountType::Loan
-                );
+                let is_credit = acct.account_type.is_credit();
                 app.import_profile.is_credit_account = is_credit;
                 if app.import_detected_bank.is_none() {
                     app.import_profile.negate_amounts = is_credit;
@@ -789,7 +533,6 @@ fn handle_select_account_input(
                     app.set_status(format!("Error generating preview: {e}"));
                 }
             } else if app.accounts.is_empty() {
-                // No accounts — prompt to create one
                 app.import_creating_account = true;
                 app.import_new_account_name.clear();
             }
@@ -798,23 +541,21 @@ fn handle_select_account_input(
             app.import_step = ImportStep::MapColumns;
         }
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let half = page / 2;
-            for _ in 0..half {
-                if app.import_account_index + 1 < app.accounts.len() {
-                    app.import_account_index += 1;
-                }
-            }
-            if app.import_account_index >= app.import_account_scroll + page {
-                app.import_account_scroll = app.import_account_index.saturating_sub(page - 1);
+            for _ in 0..page / 2 {
+                scroll_down(
+                    &mut app.import_account_index,
+                    &mut app.import_account_scroll,
+                    app.accounts.len(),
+                    page,
+                );
             }
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let half = page / 2;
-            for _ in 0..half {
-                app.import_account_index = app.import_account_index.saturating_sub(1);
-            }
-            if app.import_account_index < app.import_account_scroll {
-                app.import_account_scroll = app.import_account_index;
+            for _ in 0..page / 2 {
+                scroll_up(
+                    &mut app.import_account_index,
+                    &mut app.import_account_scroll,
+                );
             }
         }
         _ => {}
@@ -862,7 +603,6 @@ fn handle_search_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         }
         KeyCode::Backspace => {
             app.search_input.pop();
-            // Live search: filter as you type
             app.screen = Screen::Transactions;
             app.transaction_index = 0;
             app.transaction_scroll = 0;
@@ -870,7 +610,6 @@ fn handle_search_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         }
         KeyCode::Char(c) => {
             app.search_input.push(c);
-            // Live search: filter as you type
             app.screen = Screen::Transactions;
             app.transaction_index = 0;
             app.transaction_scroll = 0;
@@ -948,7 +687,6 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             if let Some(action) = app.pending_action.take() {
-                use crate::ui::app::PendingAction;
                 match action {
                     PendingAction::DeleteTransaction { id, description } => {
                         db.delete_transaction(id)?;
@@ -960,6 +698,18 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
                             app.transaction_index = app.transactions.len().saturating_sub(1);
                         }
                         app.set_status(format!("Deleted: {description}"));
+                    }
+                    PendingAction::DeleteTransactions { ids, count } => {
+                        db.delete_transactions_batch(&ids)?;
+                        app.clear_selections();
+                        app.refresh_transactions(db)?;
+                        app.refresh_dashboard(db)?;
+                        if app.transaction_index >= app.transactions.len()
+                            && !app.transactions.is_empty()
+                        {
+                            app.transaction_index = app.transactions.len().saturating_sub(1);
+                        }
+                        app.set_status(format!("Deleted {count} transactions"));
                     }
                     PendingAction::DeleteBudget { id, name } => {
                         db.delete_budget(id)?;
@@ -978,12 +728,10 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
                         app.set_status(format!("Deleted rule: '{pattern}'"));
                     }
                     PendingAction::ImportCommit => {
-                        // Run existing rules against the preview transactions
                         let rules = db.get_import_rules()?;
                         let categorizer = crate::categorize::Categorizer::new(&rules);
                         categorizer.categorize_batch(&mut app.import_preview);
 
-                        // Check for uncategorized transactions — enter interactive categorize step
                         if app.prepare_categorize_step() {
                             let total = app.import_cat_descriptions.len();
                             app.import_step = ImportStep::Categorize;
@@ -992,7 +740,6 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
                                 if total == 1 { "" } else { "s" }
                             ));
                         } else {
-                            // All categorized — commit immediately
                             commit_import(app, db)?;
                         }
                     }
@@ -1007,7 +754,7 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
             app.confirm_message.clear();
             app.set_status("Cancelled");
         }
-        _ => {} // Ignore other keys
+        _ => {}
     }
     Ok(())
 }
@@ -1015,6 +762,7 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
 // ── Navigation helpers ───────────────────────────────────────
 
 fn switch_screen(app: &mut App, db: &mut Database, screen: Screen) -> Result<()> {
+    app.clear_selections();
     app.screen = screen;
     match screen {
         Screen::Dashboard => app.refresh_dashboard(db)?,
@@ -1039,50 +787,52 @@ fn switch_screen(app: &mut App, db: &mut Database, screen: Screen) -> Result<()>
 fn handle_move_down(app: &mut App) {
     match app.screen {
         Screen::Accounts => {
-            if app.accounts_tab_index + 1 < app.account_snapshots.len() {
-                app.accounts_tab_index += 1;
-                let page = app.accounts_page();
-                if app.accounts_tab_index >= app.accounts_tab_scroll + page {
-                    app.accounts_tab_scroll = app.accounts_tab_index.saturating_sub(page - 1);
-                }
-            }
+            let page = app.accounts_page();
+            scroll_down(
+                &mut app.accounts_tab_index,
+                &mut app.accounts_tab_scroll,
+                app.account_snapshots.len(),
+                page,
+            );
         }
         Screen::Transactions => {
-            if app.transaction_index + 1 < app.transactions.len() {
-                app.transaction_index += 1;
-                let page = app.transaction_page();
-                if app.transaction_index >= app.transaction_scroll + page {
-                    app.transaction_scroll = app.transaction_index.saturating_sub(page - 1);
-                }
-            }
+            let page = app.transaction_page();
+            scroll_down(
+                &mut app.transaction_index,
+                &mut app.transaction_scroll,
+                app.transactions.len(),
+                page,
+            );
         }
         Screen::Categories => {
             if app.category_view_rules {
-                if app.rule_index + 1 < app.import_rules.len() {
-                    app.rule_index += 1;
-                    let page = app.rule_page();
-                    if app.rule_index >= app.rule_scroll + page {
-                        app.rule_scroll = app.rule_index.saturating_sub(page - 1);
-                    }
-                }
-            } else if app.category_index + 1 < app.categories.len() {
-                app.category_index += 1;
+                let page = app.rule_page();
+                scroll_down(
+                    &mut app.rule_index,
+                    &mut app.rule_scroll,
+                    app.import_rules.len(),
+                    page,
+                );
+            } else {
                 let page = app.category_page();
-                if app.category_index >= app.category_scroll + page {
-                    app.category_scroll = app.category_index.saturating_sub(page - 1);
-                }
+                scroll_down(
+                    &mut app.category_index,
+                    &mut app.category_scroll,
+                    app.categories.len(),
+                    page,
+                );
             }
         }
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => {
                 let filtered_len = app.file_browser_filtered().len();
-                if app.file_browser_index + 1 < filtered_len {
-                    app.file_browser_index += 1;
-                    let page = app.file_browser_page();
-                    if app.file_browser_index >= app.file_browser_scroll + page {
-                        app.file_browser_scroll = app.file_browser_index.saturating_sub(page - 1);
-                    }
-                }
+                let page = app.file_browser_page();
+                scroll_down(
+                    &mut app.file_browser_index,
+                    &mut app.file_browser_scroll,
+                    filtered_len,
+                    page,
+                );
             }
             ImportStep::MapColumns => {
                 if app.import_selected_field < 6 {
@@ -1092,13 +842,13 @@ fn handle_move_down(app: &mut App) {
             _ => {}
         },
         Screen::Budgets => {
-            if app.budget_index + 1 < app.budgets.len() {
-                app.budget_index += 1;
-                let page = app.budget_page();
-                if app.budget_index >= app.budget_scroll + page {
-                    app.budget_scroll = app.budget_index.saturating_sub(page - 1);
-                }
-            }
+            let page = app.budget_page();
+            scroll_down(
+                &mut app.budget_index,
+                &mut app.budget_scroll,
+                app.budgets.len(),
+                page,
+            );
         }
         _ => {}
     }
@@ -1106,41 +856,21 @@ fn handle_move_down(app: &mut App) {
 
 fn handle_move_up(app: &mut App) {
     match app.screen {
-        Screen::Accounts => {
-            app.accounts_tab_index = app.accounts_tab_index.saturating_sub(1);
-            if app.accounts_tab_index < app.accounts_tab_scroll {
-                app.accounts_tab_scroll = app.accounts_tab_index;
-            }
-        }
-        Screen::Transactions => {
-            app.transaction_index = app.transaction_index.saturating_sub(1);
-            if app.transaction_index < app.transaction_scroll {
-                app.transaction_scroll = app.transaction_index;
-            }
-        }
+        Screen::Accounts => scroll_up(&mut app.accounts_tab_index, &mut app.accounts_tab_scroll),
+        Screen::Transactions => scroll_up(&mut app.transaction_index, &mut app.transaction_scroll),
         Screen::Categories => {
             if app.category_view_rules {
-                app.rule_index = app.rule_index.saturating_sub(1);
-                if app.rule_index < app.rule_scroll {
-                    app.rule_scroll = app.rule_index;
-                }
+                scroll_up(&mut app.rule_index, &mut app.rule_scroll);
             } else {
-                app.category_index = app.category_index.saturating_sub(1);
-                if app.category_index < app.category_scroll {
-                    app.category_scroll = app.category_index;
-                }
+                scroll_up(&mut app.category_index, &mut app.category_scroll);
             }
         }
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => {
                 if app.file_browser_index == 0 {
-                    // At top of list — focus the filter input
                     app.file_browser_input_focused = true;
                 } else {
-                    app.file_browser_index = app.file_browser_index.saturating_sub(1);
-                    if app.file_browser_index < app.file_browser_scroll {
-                        app.file_browser_scroll = app.file_browser_index;
-                    }
+                    scroll_up(&mut app.file_browser_index, &mut app.file_browser_scroll);
                 }
             }
             ImportStep::MapColumns => {
@@ -1148,19 +878,13 @@ fn handle_move_up(app: &mut App) {
             }
             _ => {}
         },
-        Screen::Budgets => {
-            app.budget_index = app.budget_index.saturating_sub(1);
-            if app.budget_index < app.budget_scroll {
-                app.budget_scroll = app.budget_index;
-            }
-        }
+        Screen::Budgets => scroll_up(&mut app.budget_index, &mut app.budget_scroll),
         _ => {}
     }
 }
 
 fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
     if app.screen == Screen::Accounts {
-        // Drill into account's transactions
         if let Some(snap) = app.account_snapshots.get(app.accounts_tab_index) {
             let account_id = snap.account.id;
             let account_name = snap.account.name.clone();
@@ -1192,14 +916,12 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
                 }
             }
             ImportStep::MapColumns => {
-                // Advance to account selection step
                 app.refresh_accounts(db)?;
                 app.import_account_index = 0;
                 app.import_account_scroll = 0;
                 app.import_creating_account = false;
                 app.import_new_account_name.clear();
 
-                // Pre-select: try to match detected bank name
                 if let Some(ref bank) = app.import_detected_bank {
                     let lower = bank.to_lowercase();
                     if let Some(pos) = app
@@ -1211,30 +933,24 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
                     }
                 }
 
-                // Pre-set account type based on profile
                 if app.import_profile.is_credit_account {
-                    // Default to CreditCard type for new accounts
                     app.import_new_account_type = AccountType::all()
                         .iter()
                         .position(|t| *t == AccountType::CreditCard)
                         .unwrap_or(0);
                 } else {
-                    app.import_new_account_type = 0; // Checking
+                    app.import_new_account_type = 0;
                 }
 
                 app.import_step = ImportStep::SelectAccount;
             }
-            ImportStep::SelectAccount => {
-                // Handled by handle_select_account_input (early return)
-            }
+            ImportStep::SelectAccount => {}
             ImportStep::Preview => {
                 app.confirm_message = format!("Import {} transactions?", app.import_preview.len());
                 app.pending_action = Some(crate::ui::app::PendingAction::ImportCommit);
                 app.input_mode = InputMode::Confirm;
             }
-            ImportStep::Categorize => {
-                // Handled by handle_categorize_input (early return)
-            }
+            ImportStep::Categorize => {}
             ImportStep::Complete => {
                 app.screen = Screen::Transactions;
                 app.refresh_transactions(db)?;
@@ -1260,23 +976,23 @@ fn handle_escape(app: &mut App) {
                 app.import_step = ImportStep::SelectFile;
             }
             ImportStep::SelectAccount => {
-                // Handled in handle_select_account_input — safety fallback
                 app.import_step = ImportStep::MapColumns;
             }
             ImportStep::Preview => {
                 app.import_step = ImportStep::SelectAccount;
             }
             ImportStep::Categorize => {
-                // Handled in handle_categorize_input — this shouldn't fire
-                // but as safety fallback, go back to preview
                 app.import_step = ImportStep::Preview;
             }
             ImportStep::Complete => {
                 app.screen = Screen::Dashboard;
             }
         },
+        Screen::Transactions if !app.selected_transactions.is_empty() => {
+            app.clear_selections();
+            app.set_status("Selection cleared");
+        }
         Screen::Transactions if app.transaction_filter_account.is_some() => {
-            // Clear account filter when pressing Esc on filtered Transactions view
             app.transaction_filter_account = None;
             app.set_status("Account filter cleared");
         }
@@ -1381,29 +1097,21 @@ fn commit_import(app: &mut App, db: &mut Database) -> Result<()> {
 fn handle_goto_top(app: &mut App) {
     match app.screen {
         Screen::Accounts => {
-            app.accounts_tab_index = 0;
-            app.accounts_tab_scroll = 0;
+            scroll_to_top(&mut app.accounts_tab_index, &mut app.accounts_tab_scroll)
         }
         Screen::Transactions => {
-            app.transaction_index = 0;
-            app.transaction_scroll = 0;
+            scroll_to_top(&mut app.transaction_index, &mut app.transaction_scroll)
         }
         Screen::Categories => {
             if app.category_view_rules {
-                app.rule_index = 0;
-                app.rule_scroll = 0;
+                scroll_to_top(&mut app.rule_index, &mut app.rule_scroll);
             } else {
-                app.category_index = 0;
-                app.category_scroll = 0;
+                scroll_to_top(&mut app.category_index, &mut app.category_scroll);
             }
         }
-        Screen::Budgets => {
-            app.budget_index = 0;
-            app.budget_scroll = 0;
-        }
+        Screen::Budgets => scroll_to_top(&mut app.budget_index, &mut app.budget_scroll),
         Screen::Import if app.import_step == ImportStep::SelectFile => {
-            app.file_browser_index = 0;
-            app.file_browser_scroll = 0;
+            scroll_to_top(&mut app.file_browser_index, &mut app.file_browser_scroll);
         }
         _ => {}
     }
@@ -1412,44 +1120,60 @@ fn handle_goto_top(app: &mut App) {
 fn handle_goto_bottom(app: &mut App) {
     match app.screen {
         Screen::Accounts => {
-            if !app.account_snapshots.is_empty() {
-                app.accounts_tab_index = app.account_snapshots.len() - 1;
-                let page = app.accounts_page();
-                app.accounts_tab_scroll = app.accounts_tab_index.saturating_sub(page - 1);
-            }
+            let page = app.accounts_page();
+            scroll_to_bottom(
+                &mut app.accounts_tab_index,
+                &mut app.accounts_tab_scroll,
+                app.account_snapshots.len(),
+                page,
+            );
         }
         Screen::Transactions => {
-            if !app.transactions.is_empty() {
-                app.transaction_index = app.transactions.len() - 1;
-                let page = app.transaction_page();
-                app.transaction_scroll = app.transaction_index.saturating_sub(page - 1);
-            }
+            let page = app.transaction_page();
+            scroll_to_bottom(
+                &mut app.transaction_index,
+                &mut app.transaction_scroll,
+                app.transactions.len(),
+                page,
+            );
         }
         Screen::Categories => {
             if app.category_view_rules {
-                if !app.import_rules.is_empty() {
-                    app.rule_index = app.import_rules.len() - 1;
-                    app.rule_scroll = app.rule_index.saturating_sub(app.rule_page() - 1);
-                }
-            } else if !app.categories.is_empty() {
-                app.category_index = app.categories.len() - 1;
-                app.category_scroll = app.category_index.saturating_sub(app.category_page() - 1);
+                let page = app.rule_page();
+                scroll_to_bottom(
+                    &mut app.rule_index,
+                    &mut app.rule_scroll,
+                    app.import_rules.len(),
+                    page,
+                );
+            } else {
+                let page = app.category_page();
+                scroll_to_bottom(
+                    &mut app.category_index,
+                    &mut app.category_scroll,
+                    app.categories.len(),
+                    page,
+                );
             }
         }
         Screen::Budgets => {
-            if !app.budgets.is_empty() {
-                app.budget_index = app.budgets.len() - 1;
-                let page = app.budget_page();
-                app.budget_scroll = app.budget_index.saturating_sub(page - 1);
-            }
+            let page = app.budget_page();
+            scroll_to_bottom(
+                &mut app.budget_index,
+                &mut app.budget_scroll,
+                app.budgets.len(),
+                page,
+            );
         }
         Screen::Import if app.import_step == ImportStep::SelectFile => {
             let filtered_len = app.file_browser_filtered().len();
-            if filtered_len > 0 {
-                app.file_browser_index = filtered_len - 1;
-                let page = app.file_browser_page();
-                app.file_browser_scroll = app.file_browser_index.saturating_sub(page - 1);
-            }
+            let page = app.file_browser_page();
+            scroll_to_bottom(
+                &mut app.file_browser_index,
+                &mut app.file_browser_scroll,
+                filtered_len,
+                page,
+            );
         }
         _ => {}
     }

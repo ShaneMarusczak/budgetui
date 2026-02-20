@@ -71,13 +71,13 @@ fn test_categorize_regex() {
 }
 
 #[test]
-fn test_categorize_regex_case_sensitive() {
-    // Regex matching is case-sensitive by default
+fn test_categorize_regex_case_insensitive() {
+    // Regex matching is case-insensitive (consistent with contains rules)
     let rules = vec![make_regex_rule(r"STARBUCKS", 1)];
     let cat = Categorizer::new(&rules);
     assert_eq!(cat.categorize("STARBUCKS COFFEE"), Some(1));
-    // Lowercase doesn't match case-sensitive regex
-    assert_eq!(cat.categorize("starbucks coffee"), None);
+    assert_eq!(cat.categorize("starbucks coffee"), Some(1));
+    assert_eq!(cat.categorize("Starbucks Coffee"), Some(1));
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-use super::app::{App, InputMode, Screen};
+use super::app::{App, InputMode, PendingAction, Screen};
 use crate::db::Database;
 use crate::models::{Account, AccountType, Budget, Category, ImportRule};
 
@@ -141,6 +141,12 @@ pub(crate) static COMMANDS: LazyLock<HashMap<&str, Command>> = LazyLock::new(|| 
     register_command!("next-month", "Go to next month", cmd_next_month, r);
     register_command!("prev-month", "Go to previous month", cmd_prev_month, r);
     register_command!("nav", "Open screen navigator", cmd_nav, r);
+    register_command!(
+        "delete-selected",
+        "Delete all selected transactions",
+        cmd_delete_selected,
+        r
+    );
 
     r
 });
@@ -244,14 +250,21 @@ fn cmd_nav(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Result<()>
 
 fn cmd_month(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
     if args.is_empty() {
-        app.set_status(format!("Current month: {}", app.current_month));
+        // No args → reset to all-time
+        app.current_month = None;
+        app.refresh_dashboard(db)?;
+        app.refresh_budgets(db)?;
+        app.refresh_accounts_tab(db)?;
+        app.set_status("Showing all time");
         return Ok(());
     }
 
     // Accept formats like "2024-01", "2024-1", "01", "1"
     let month = if args.len() <= 2 {
-        // Just month number, use current year
-        let year = &app.current_month[..4];
+        let year = app.current_month.as_ref().map_or_else(
+            || chrono::Local::now().format("%Y").to_string(),
+            |m| m[..4].to_string(),
+        );
         format!("{year}-{args:0>2}")
     } else {
         args.to_string()
@@ -259,11 +272,12 @@ fn cmd_month(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()>
 
     // Validate by parsing as an actual date
     if chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").is_ok() {
-        app.current_month = month[..7].to_string();
+        let m = month[..7].to_string();
+        app.set_status(format!("Switched to month: {m}"));
+        app.current_month = Some(m);
         app.refresh_dashboard(db)?;
-        app.refresh_transactions(db)?;
         app.refresh_budgets(db)?;
-        app.set_status(format!("Switched to month: {}", app.current_month));
+        app.refresh_accounts_tab(db)?;
     } else {
         app.set_status("Invalid month format. Use YYYY-MM (e.g. 2024-01)");
     }
@@ -324,14 +338,15 @@ fn cmd_rule(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> 
     let category_name = parts[0];
     let pattern = parts[1].to_lowercase();
 
-    // Find the category
     let categories = db.get_categories()?;
-    let cat = categories
-        .iter()
-        .find(|c| c.name.to_lowercase() == category_name.to_lowercase());
-
-    if let Some(cat) = cat {
-        let cat_id = cat.id.unwrap_or(0);
+    if let Some(cat) = Category::find_by_name(&categories, category_name) {
+        let cat_id = match cat.id {
+            Some(id) => id,
+            None => {
+                app.set_status("Category has no ID (this shouldn't happen)");
+                return Ok(());
+            }
+        };
         let rule = ImportRule::new_contains(pattern.clone(), cat_id);
         db.insert_import_rule(&rule)?;
         app.refresh_categories(db)?;
@@ -384,19 +399,24 @@ fn cmd_budget(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()
     };
 
     let categories = db.get_categories()?;
-    let cat = categories
-        .iter()
-        .find(|c| c.name.to_lowercase() == category_name.to_lowercase());
-
-    if let Some(cat) = cat {
-        let cat_id = cat.id.unwrap_or(0);
-        let budget = Budget::new(cat_id, app.current_month.clone(), amount);
+    if let Some(cat) = Category::find_by_name(&categories, category_name) {
+        let cat_id = match cat.id {
+            Some(id) => id,
+            None => {
+                app.set_status("Category has no ID (this shouldn't happen)");
+                return Ok(());
+            }
+        };
+        let budget_month = app.current_month.clone().unwrap_or_else(|| {
+            chrono::Local::now().format("%Y-%m").to_string()
+        });
+        let budget = Budget::new(cat_id, budget_month.clone(), amount);
         db.upsert_budget(&budget)?;
         app.refresh_budgets(db)?;
         app.screen = Screen::Budgets;
         app.set_status(format!(
-            "Budget set: {} = ${amount} for {}",
-            cat.name, app.current_month
+            "Budget set: {} = ${amount} for {budget_month}",
+            cat.name
         ));
     } else {
         app.set_status(format!("Category '{category_name}' not found"));
@@ -413,14 +433,11 @@ fn cmd_delete_budget(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::
 
     if let Some(budget) = app.budgets.get(app.budget_index) {
         if let Some(id) = budget.id {
-            let cat_name = app
-                .categories
-                .iter()
-                .find(|c| c.id == Some(budget.category_id))
+            let cat_name = Category::find_by_id(&app.categories, budget.category_id)
                 .map(|c| c.name.as_str())
                 .unwrap_or("Unknown");
             app.confirm_message = format!("Delete budget for '{cat_name}'?");
-            app.pending_action = Some(super::app::PendingAction::DeleteBudget {
+            app.pending_action = Some(PendingAction::DeleteBudget {
                 id,
                 name: cat_name.to_string(),
             });
@@ -454,7 +471,7 @@ fn cmd_delete_rule(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Re
         if let Some(id) = rule.id {
             let pattern = rule.pattern.clone();
             app.confirm_message = format!("Delete rule '{pattern}'?");
-            app.pending_action = Some(super::app::PendingAction::DeleteRule { id, pattern });
+            app.pending_action = Some(PendingAction::DeleteRule { id, pattern });
             app.input_mode = InputMode::Confirm;
         }
     }
@@ -484,12 +501,14 @@ fn cmd_regex_rule(args: &str, app: &mut App, db: &mut Database) -> anyhow::Resul
     }
 
     let categories = db.get_categories()?;
-    let cat = categories
-        .iter()
-        .find(|c| c.name.to_lowercase() == category_name.to_lowercase());
-
-    if let Some(cat) = cat {
-        let cat_id = cat.id.unwrap_or(0);
+    if let Some(cat) = Category::find_by_name(&categories, category_name) {
+        let cat_id = match cat.id {
+            Some(id) => id,
+            None => {
+                app.set_status("Category has no ID (this shouldn't happen)");
+                return Ok(());
+            }
+        };
         let rule = ImportRule::new_regex(pattern.clone(), cat_id);
         db.insert_import_rule(&rule)?;
         app.refresh_categories(db)?;
@@ -540,9 +559,13 @@ fn cmd_recat(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()>
     }
 
     let categories = db.get_categories()?;
-    let cat = categories
-        .iter()
-        .find(|c| c.name.to_lowercase() == args.to_lowercase());
+
+    // Try name match first, then ID match
+    let cat = Category::find_by_name(&categories, args).or_else(|| {
+        args.parse::<i64>()
+            .ok()
+            .and_then(|id| Category::find_by_id(&categories, id))
+    });
 
     if let Some(cat) = cat {
         if let Some(txn) = app.transactions.get(app.transaction_index) {
@@ -553,23 +576,7 @@ fn cmd_recat(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()>
             }
         }
     } else {
-        let cat_by_id = if let Ok(id) = args.parse::<i64>() {
-            db.get_category_by_id(id)?
-        } else {
-            None
-        };
-
-        if let Some(cat) = cat_by_id {
-            if let Some(txn) = app.transactions.get(app.transaction_index) {
-                if let Some(txn_id) = txn.id {
-                    db.update_transaction_category(txn_id, cat.id)?;
-                    app.refresh_transactions(db)?;
-                    app.set_status(format!("Categorized as: {}", cat.name));
-                }
-            }
-        } else {
-            app.set_status(format!("Category '{args}' not found"));
-        }
+        app.set_status(format!("Category '{args}' not found"));
     }
 
     Ok(())
@@ -657,7 +664,7 @@ fn cmd_delete_txn(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Res
         if let Some(id) = txn.id {
             let desc = txn.description.clone();
             app.confirm_message = format!("Delete '{desc}'?");
-            app.pending_action = Some(super::app::PendingAction::DeleteTransaction {
+            app.pending_action = Some(PendingAction::DeleteTransaction {
                 id,
                 description: desc,
             });
@@ -670,57 +677,22 @@ fn cmd_delete_txn(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Res
 
 fn cmd_export(args: &str, app: &mut App, db: &mut Database) -> anyhow::Result<()> {
     let path = if args.is_empty() {
-        let home = dirs_home();
-        format!("{}/budgetui-export-{}.csv", home, app.current_month)
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let suffix = app
+            .current_month
+            .as_deref()
+            .unwrap_or("all");
+        format!("{home}/budgetui-export-{suffix}.csv")
     } else {
-        shellexpand(args)
+        crate::run::shellexpand(args)
     };
 
-    let txns = db.get_all_transactions_for_export(Some(&app.current_month))?;
-    if txns.is_empty() {
-        app.set_status("No transactions to export for this month");
-        return Ok(());
+    let count = db.export_to_csv(&path, app.current_month.as_deref())?;
+    if count == 0 {
+        app.set_status("No transactions to export");
+    } else {
+        app.set_status(format!("Exported {count} transactions to {path}"));
     }
-
-    let categories = db.get_categories()?;
-    let accounts = db.get_accounts()?;
-
-    let mut wtr = csv::Writer::from_path(&path)
-        .map_err(|e| anyhow::anyhow!("Failed to create export file: {e}"))?;
-
-    wtr.write_record([
-        "Date",
-        "Description",
-        "Amount",
-        "Category",
-        "Account",
-        "Notes",
-    ])?;
-
-    for txn in &txns {
-        let cat_name = txn
-            .category_id
-            .and_then(|cid| categories.iter().find(|c| c.id == Some(cid)))
-            .map(|c| c.name.as_str())
-            .unwrap_or("");
-        let acct_name = accounts
-            .iter()
-            .find(|a| a.id == Some(txn.account_id))
-            .map(|a| a.name.as_str())
-            .unwrap_or("");
-
-        wtr.write_record([
-            &txn.date,
-            &txn.description,
-            &txn.amount.to_string(),
-            cat_name,
-            acct_name,
-            &txn.notes,
-        ])?;
-    }
-
-    wtr.flush()?;
-    app.set_status(format!("Exported {} transactions to {path}", txns.len()));
     Ok(())
 }
 
@@ -765,10 +737,32 @@ fn cmd_prev_month(_args: &str, app: &mut App, db: &mut Database) -> anyhow::Resu
     advance_month(app, db, -1)
 }
 
+fn cmd_delete_selected(_args: &str, app: &mut App, _db: &mut Database) -> anyhow::Result<()> {
+    if app.screen != Screen::Transactions {
+        app.set_status("Navigate to Transactions first");
+        return Ok(());
+    }
+
+    if app.selected_transactions.is_empty() {
+        app.set_status("No transactions selected. Use Space to select");
+        return Ok(());
+    }
+
+    let ids: Vec<i64> = app.selected_transactions.iter().copied().collect();
+    let count = ids.len();
+    app.confirm_message = format!("Delete {count} selected transactions?");
+    app.pending_action = Some(PendingAction::DeleteTransactions { ids, count });
+    app.input_mode = InputMode::Confirm;
+
+    Ok(())
+}
+
 fn advance_month(app: &mut App, db: &mut Database, delta: i32) -> anyhow::Result<()> {
-    if let Ok(date) =
-        chrono::NaiveDate::parse_from_str(&format!("{}-01", app.current_month), "%Y-%m-%d")
-    {
+    let base = app.current_month.as_ref().map_or_else(
+        || chrono::Local::now().format("%Y-%m").to_string(),
+        |m| m.clone(),
+    );
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(&format!("{base}-01"), "%Y-%m-%d") {
         let new_date = if delta > 0 {
             date.checked_add_months(chrono::Months::new(1))
         } else {
@@ -776,25 +770,16 @@ fn advance_month(app: &mut App, db: &mut Database, delta: i32) -> anyhow::Result
         };
 
         if let Some(d) = new_date {
-            app.current_month = d.format("%Y-%m").to_string();
+            let m = d.format("%Y-%m").to_string();
+            app.set_status(format!("Month: {m}"));
+            app.current_month = Some(m);
+            app.clear_selections();
             app.refresh_dashboard(db)?;
-            app.refresh_transactions(db)?;
             app.refresh_budgets(db)?;
-            app.set_status(format!("Month: {}", app.current_month));
+            app.refresh_accounts_tab(db)?;
         }
     }
 
     Ok(())
 }
 
-fn dirs_home() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| ".".into())
-}
-
-fn shellexpand(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        format!("{}/{rest}", dirs_home())
-    } else {
-        path.to_string()
-    }
-}

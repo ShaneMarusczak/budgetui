@@ -1,6 +1,7 @@
-use anyhow::Result;
-use chrono::Local;
+use std::collections::HashSet;
 use std::path::PathBuf;
+
+use anyhow::Result;
 
 use crate::db::Database;
 use crate::import::{CsvImporter, CsvProfile};
@@ -67,6 +68,7 @@ impl std::fmt::Display for InputMode {
 #[derive(Debug, Clone)]
 pub(crate) enum PendingAction {
     DeleteTransaction { id: i64, description: String },
+    DeleteTransactions { ids: Vec<i64>, count: usize },
     DeleteBudget { id: i64, name: String },
     DeleteRule { id: i64, pattern: String },
     ImportCommit,
@@ -113,7 +115,7 @@ pub(crate) struct App {
     pub(crate) show_help: bool,
     pub(crate) show_nav: bool,
     pub(crate) nav_index: usize,
-    pub(crate) current_month: String,
+    pub(crate) current_month: Option<String>,
 
     // Dashboard — totals (all accounts)
     pub(crate) monthly_income: rust_decimal::Decimal,
@@ -138,6 +140,7 @@ pub(crate) struct App {
     pub(crate) transaction_scroll: usize,
     pub(crate) transaction_filter_account: Option<i64>,
     pub(crate) transaction_count: i64,
+    pub(crate) selected_transactions: HashSet<i64>,
 
     // Categories
     pub(crate) categories: Vec<Category>,
@@ -205,9 +208,6 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new() -> Self {
-        let now = Local::now();
-        let current_month = now.format("%Y-%m").to_string();
-
         Self {
             running: true,
             screen: Screen::Dashboard,
@@ -218,7 +218,7 @@ impl App {
             show_help: false,
             show_nav: false,
             nav_index: 0,
-            current_month,
+            current_month: None,
 
             monthly_income: rust_decimal::Decimal::ZERO,
             monthly_expenses: rust_decimal::Decimal::ZERO,
@@ -238,6 +238,7 @@ impl App {
             transaction_scroll: 0,
             transaction_filter_account: None,
             transaction_count: 0,
+            selected_transactions: HashSet::new(),
 
             categories: Vec::new(),
             category_index: 0,
@@ -298,30 +299,29 @@ impl App {
     }
 
     pub(crate) fn refresh_dashboard(&mut self, db: &Database) -> Result<()> {
-        let (income, expenses) = db.get_monthly_totals(&self.current_month)?;
+        let month = self.current_month.as_deref();
+        let (income, expenses) = db.get_monthly_totals(month)?;
         self.monthly_income = income;
         self.monthly_expenses = expenses;
         self.net_worth = db.get_net_worth()?;
-        self.spending_by_category = db.get_spending_by_category(&self.current_month)?;
+        self.spending_by_category = db.get_spending_by_category(month)?;
         self.monthly_trend = db.get_monthly_trend(12)?;
         self.transaction_count = db.get_transaction_count()?;
 
         // Debit accounts (Checking, Savings, Cash, Investment, Other)
-        let debit_types = &["Checking", "Savings", "Cash", "Investment", "Other"];
-        let (di, de) = db.get_monthly_totals_by_account_type(&self.current_month, debit_types)?;
+        let debit_types = AccountType::debit_type_strs();
+        let (di, de) = db.get_monthly_totals_by_account_type(month, debit_types)?;
         self.debit_income = di;
         self.debit_expenses = de;
         self.debit_balance = db.get_balance_by_account_type(debit_types)?;
 
         // Credit accounts (CreditCard, Loan)
-        let credit_types = &["Credit Card", "Loan"];
-        let (cp, cc) = db.get_monthly_totals_by_account_type(&self.current_month, credit_types)?;
+        let credit_types = AccountType::credit_type_strs();
+        let (cp, cc) = db.get_monthly_totals_by_account_type(month, credit_types)?;
         self.credit_payments = cp; // positive = payments made to card
         self.credit_charges = cc; // negative = charges/purchases
         self.credit_balance = db.get_balance_by_account_type(credit_types)?;
 
-        // Transactions are needed for dashboard card counts (income_count, expense_count)
-        self.refresh_transactions(db)?;
         Ok(())
     }
 
@@ -335,9 +335,9 @@ impl App {
             Some(200),
             None,
             self.transaction_filter_account,
-            None, // category filter (not yet implemented)
+            None,
             search,
-            Some(&self.current_month),
+            None,
         )?;
         self.transaction_count = db.get_transaction_count()?;
         if self.transaction_index >= self.transactions.len() && !self.transactions.is_empty() {
@@ -353,7 +353,7 @@ impl App {
     }
 
     pub(crate) fn refresh_budgets(&mut self, db: &Database) -> Result<()> {
-        self.budgets = db.get_budgets(&self.current_month)?;
+        self.budgets = db.get_budgets(self.current_month.as_deref())?;
         Ok(())
     }
 
@@ -364,10 +364,11 @@ impl App {
 
     pub(crate) fn refresh_accounts_tab(&mut self, db: &Database) -> Result<()> {
         self.accounts = db.get_accounts()?;
+        let month = self.current_month.as_deref();
         let mut snapshots = Vec::with_capacity(self.accounts.len());
         for account in &self.accounts {
             let aid = account.id.unwrap_or(0);
-            let (income, expenses) = db.get_account_monthly_totals(aid, &self.current_month)?;
+            let (income, expenses) = db.get_account_monthly_totals(aid, month)?;
             let balance = db.get_account_balance(aid)?;
             snapshots.push(AccountSnapshot {
                 account: account.clone(),
@@ -381,7 +382,8 @@ impl App {
     }
 
     pub(crate) fn refresh_all(&mut self, db: &Database) -> Result<()> {
-        self.refresh_dashboard(db)?; // also refreshes transactions
+        self.refresh_dashboard(db)?;
+        self.refresh_transactions(db)?;
         self.refresh_categories(db)?;
         self.refresh_budgets(db)?;
         self.refresh_accounts(db)?;
@@ -591,5 +593,9 @@ impl App {
 
     pub(crate) fn set_status(&mut self, msg: impl Into<String>) {
         self.status_message = msg.into();
+    }
+
+    pub(crate) fn clear_selections(&mut self) {
+        self.selected_transactions.clear();
     }
 }

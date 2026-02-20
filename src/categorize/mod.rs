@@ -20,7 +20,9 @@ impl Categorizer {
             .iter()
             .map(|r| {
                 let regex = if r.is_regex {
-                    Regex::new(&r.pattern).ok()
+                    // Lowercase the pattern so it matches against the lowercased
+                    // input, consistent with the contains rule behavior
+                    Regex::new(&r.pattern.to_lowercase()).ok()
                 } else {
                     None
                 };
@@ -43,7 +45,7 @@ impl Categorizer {
             let matched = if rule.is_regex {
                 rule.regex
                     .as_ref()
-                    .is_some_and(|re| re.is_match(description))
+                    .is_some_and(|re| re.is_match(&desc_lower))
             } else {
                 desc_lower.contains(&rule.pattern)
             };

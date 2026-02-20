@@ -359,6 +359,29 @@ fn test_transaction_delete() {
 }
 
 #[test]
+fn test_transaction_delete_batch() {
+    let mut db = Database::open_in_memory().unwrap();
+    setup_test_data(&mut db);
+
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
+    let count_before = txns.len();
+    let ids: Vec<i64> = txns.iter().take(2).filter_map(|t| t.id).collect();
+
+    let deleted = db.delete_transactions_batch(&ids).unwrap();
+    assert_eq!(deleted, 2);
+
+    let txns = db
+        .get_transactions(Some(100), None, None, None, None, None)
+        .unwrap();
+    assert_eq!(txns.len(), count_before - 2);
+    for id in &ids {
+        assert!(!txns.iter().any(|t| t.id == Some(*id)));
+    }
+}
+
+#[test]
 fn test_transaction_ordering() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
@@ -381,7 +404,8 @@ fn test_category_crud() {
     let id = db.insert_category(&cat).unwrap();
     assert!(id > 0);
 
-    let fetched = db.get_category_by_id(id).unwrap();
+    let cats = db.get_categories().unwrap();
+    let fetched = Category::find_by_id(&cats, id);
     assert!(fetched.is_some());
     assert_eq!(fetched.unwrap().name, "Test Category");
 }
@@ -389,7 +413,8 @@ fn test_category_crud() {
 #[test]
 fn test_category_by_id_not_found() {
     let db = Database::open_in_memory().unwrap();
-    let result = db.get_category_by_id(99999).unwrap();
+    let cats = db.get_categories().unwrap();
+    let result = Category::find_by_id(&cats, 99999);
     assert!(result.is_none());
 }
 
@@ -420,19 +445,19 @@ fn test_budget_crud() {
     let id = db.upsert_budget(&budget).unwrap();
     assert!(id > 0);
 
-    let budgets = db.get_budgets("2024-01").unwrap();
+    let budgets = db.get_budgets(Some("2024-01")).unwrap();
     assert_eq!(budgets.len(), 1);
     assert_eq!(budgets[0].limit_amount, dec!(500));
 
     // Upsert with new amount
     let updated = Budget::new(food_id, "2024-01".into(), dec!(600));
     db.upsert_budget(&updated).unwrap();
-    let budgets = db.get_budgets("2024-01").unwrap();
+    let budgets = db.get_budgets(Some("2024-01")).unwrap();
     assert_eq!(budgets.len(), 1);
     assert_eq!(budgets[0].limit_amount, dec!(600));
 
     db.delete_budget(budgets[0].id.unwrap()).unwrap();
-    let budgets = db.get_budgets("2024-01").unwrap();
+    let budgets = db.get_budgets(Some("2024-01")).unwrap();
     assert!(budgets.is_empty());
 }
 
@@ -452,9 +477,9 @@ fn test_budget_different_months() {
     db.upsert_budget(&Budget::new(food_id, "2024-02".into(), dec!(600)))
         .unwrap();
 
-    assert_eq!(db.get_budgets("2024-01").unwrap().len(), 1);
-    assert_eq!(db.get_budgets("2024-02").unwrap().len(), 1);
-    assert_eq!(db.get_budgets("2024-03").unwrap().len(), 0);
+    assert_eq!(db.get_budgets(Some("2024-01")).unwrap().len(), 1);
+    assert_eq!(db.get_budgets(Some("2024-02")).unwrap().len(), 1);
+    assert_eq!(db.get_budgets(Some("2024-03")).unwrap().len(), 0);
 }
 
 // ── Import Rule CRUD ──────────────────────────────────────────
@@ -518,7 +543,7 @@ fn test_monthly_totals() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let (income, expenses) = db.get_monthly_totals("2024-01").unwrap();
+    let (income, expenses) = db.get_monthly_totals(Some("2024-01")).unwrap();
     assert_eq!(income, dec!(3000.00));
     assert!(expenses < Decimal::ZERO);
     assert_eq!(expenses, dec!(-5.25) + dec!(-42.99));
@@ -527,7 +552,7 @@ fn test_monthly_totals() {
 #[test]
 fn test_monthly_totals_empty_month() {
     let db = Database::open_in_memory().unwrap();
-    let (income, expenses) = db.get_monthly_totals("2099-01").unwrap();
+    let (income, expenses) = db.get_monthly_totals(Some("2099-01")).unwrap();
     assert_eq!(income, Decimal::ZERO);
     assert_eq!(expenses, Decimal::ZERO);
 }
@@ -554,7 +579,7 @@ fn test_spending_by_category() {
     let mut db = Database::open_in_memory().unwrap();
     setup_test_data(&mut db);
 
-    let spending = db.get_spending_by_category("2024-01").unwrap();
+    let spending = db.get_spending_by_category(Some("2024-01")).unwrap();
     // All uncategorized expenses in January
     assert!(!spending.is_empty());
     // All amounts should be negative (expenses)
@@ -566,7 +591,7 @@ fn test_spending_by_category() {
 #[test]
 fn test_spending_by_category_empty_month() {
     let db = Database::open_in_memory().unwrap();
-    let spending = db.get_spending_by_category("2099-01").unwrap();
+    let spending = db.get_spending_by_category(Some("2099-01")).unwrap();
     assert!(spending.is_empty());
 }
 
@@ -840,7 +865,7 @@ fn test_monthly_totals_by_account_type_debit() {
 
     let debit_types = &["Checking", "Savings", "Cash", "Investment", "Other"];
     let (income, expenses) = db
-        .get_monthly_totals_by_account_type("2024-01", debit_types)
+        .get_monthly_totals_by_account_type(Some("2024-01"), debit_types)
         .unwrap();
     assert_eq!(income, dec!(3000.00));
     assert_eq!(expenses, dec!(-5.25));
@@ -853,7 +878,7 @@ fn test_monthly_totals_by_account_type_credit() {
 
     let credit_types = &["Credit Card", "Loan"];
     let (income, expenses) = db
-        .get_monthly_totals_by_account_type("2024-01", credit_types)
+        .get_monthly_totals_by_account_type(Some("2024-01"), credit_types)
         .unwrap();
     // Credit card: payment +45 is "income" (positive), charge -45 is "expense"
     assert_eq!(income, dec!(45.00));
@@ -866,7 +891,7 @@ fn test_monthly_totals_by_account_type_empty_month() {
     setup_multi_account_data(&mut db);
 
     let (income, expenses) = db
-        .get_monthly_totals_by_account_type("2099-01", &["Checking"])
+        .get_monthly_totals_by_account_type(Some("2099-01"), &["Checking"])
         .unwrap();
     assert_eq!(income, Decimal::ZERO);
     assert_eq!(expenses, Decimal::ZERO);
@@ -910,13 +935,13 @@ fn test_account_monthly_totals() {
 
     // Checking: salary +3000, coffee -5.25
     let (income, expenses) = db
-        .get_account_monthly_totals(checking_id, "2024-01")
+        .get_account_monthly_totals(checking_id, Some("2024-01"))
         .unwrap();
     assert_eq!(income, dec!(3000.00));
     assert_eq!(expenses, dec!(-5.25));
 
     // Credit: charge -45, payment +45
-    let (inc, exp) = db.get_account_monthly_totals(credit_id, "2024-01").unwrap();
+    let (inc, exp) = db.get_account_monthly_totals(credit_id, Some("2024-01")).unwrap();
     assert_eq!(inc, dec!(45.00));
     assert_eq!(exp, dec!(-45.00));
 }
@@ -950,7 +975,7 @@ fn test_account_monthly_totals_empty_month() {
     let (checking_id, _) = setup_multi_account_data(&mut db);
 
     let (income, expenses) = db
-        .get_account_monthly_totals(checking_id, "2099-01")
+        .get_account_monthly_totals(checking_id, Some("2099-01"))
         .unwrap();
     assert_eq!(income, Decimal::ZERO);
     assert_eq!(expenses, Decimal::ZERO);

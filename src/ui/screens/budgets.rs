@@ -8,6 +8,7 @@ use ratatui::{
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 
+use crate::models::Category;
 use crate::ui::app::App;
 use crate::ui::theme;
 
@@ -24,10 +25,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, 
         .skip(app.budget_scroll)
         .take(area.height.saturating_sub(2) as usize)
         .map(|(i, budget)| {
-            let cat_name = app
-                .categories
-                .iter()
-                .find(|c| c.id == Some(budget.category_id))
+            let cat_name = Category::find_by_id(&app.categories, budget.category_id)
                 .map(|c| c.name.as_str())
                 .unwrap_or("Unknown");
 
@@ -82,7 +80,10 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, 
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
-                format!(" Budgets for {} ", app.current_month),
+                format!(
+                    " Budgets for {} ",
+                    app.current_month.as_deref().unwrap_or("All Time")
+                ),
                 Style::default()
                     .fg(theme::TEXT_DIM)
                     .add_modifier(Modifier::BOLD),

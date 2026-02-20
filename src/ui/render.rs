@@ -117,12 +117,7 @@ fn render_screen(f: &mut Frame, area: Rect, app: &App) {
         Screen::Dashboard => super::screens::dashboard::render(f, area, app),
         Screen::Accounts => super::screens::accounts::render(f, area, app),
         Screen::Transactions => {
-            let cat_lookup: Vec<(i64, String)> = app
-                .categories
-                .iter()
-                .filter_map(|c| c.id.map(|id| (id, c.name.clone())))
-                .collect();
-            super::screens::transactions::render(f, area, app, &cat_lookup);
+            super::screens::transactions::render(f, area, app);
         }
         Screen::Import => super::screens::import::render(f, area, app),
         Screen::Categories => super::screens::categories::render(f, area, app),
@@ -158,15 +153,22 @@ fn render_status_bar(f: &mut Frame, area: Rect, app: &App) {
             .add_modifier(Modifier::BOLD),
     };
 
+    let month_label = app.current_month.as_deref().unwrap_or("All time");
     let info = format!(
         " {} | {} | {} txns",
-        app.screen, app.current_month, app.transaction_count
+        app.screen, month_label, app.transaction_count
     );
 
     let right = match app.screen {
         Screen::Dashboard => " H/L month | n/p account | ? help ",
         Screen::Accounts => " j/k navigate | Enter view txns | ? help ",
-        Screen::Transactions => " D delete | /search | :recat | ? help ",
+        Screen::Transactions => {
+            if app.selected_transactions.is_empty() {
+                " Space select | D delete | /search | ? help "
+            } else {
+                " D delete selected | Esc clear | /search | ? help "
+            }
+        }
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => " j/k navigate | Enter select | Esc back ",
             ImportStep::MapColumns => " +/- adjust | Enter next | Esc back ",
@@ -297,11 +299,11 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  D (Transactions) Delete transaction    r (Categories) Toggle rules",
+            "  Space            Toggle-select txn     D              Delete / bulk delete",
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  n/p (Dashboard)  Cycle accounts",
+            "  r (Categories)   Toggle rules          n/p (Dash)     Cycle accounts",
             theme::normal_style(),
         )),
         Line::from(Span::styled(

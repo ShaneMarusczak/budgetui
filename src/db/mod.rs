@@ -1,12 +1,57 @@
 mod schema;
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
 use rust_decimal::Decimal;
 use std::path::Path;
 use std::str::FromStr;
 
 use crate::models::*;
+
+/// Parse a Decimal from a string, defaulting to zero on failure.
+fn parse_decimal(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap_or_default()
+}
+
+/// Map a rusqlite Row to a Transaction. Expects columns in the standard order:
+/// id, account_id, date, description, original_description, amount(TEXT),
+/// category_id, notes, is_transfer, import_hash, created_at
+fn row_to_transaction(row: &Row<'_>) -> rusqlite::Result<Transaction> {
+    let amount_str: String = row.get(5)?;
+    Ok(Transaction {
+        id: Some(row.get(0)?),
+        account_id: row.get(1)?,
+        date: row.get(2)?,
+        description: row.get(3)?,
+        original_description: row.get(4)?,
+        amount: parse_decimal(&amount_str),
+        category_id: row.get(6)?,
+        notes: row.get(7)?,
+        is_transfer: row.get(8)?,
+        import_hash: row.get(9)?,
+        created_at: row.get(10)?,
+    })
+}
+
+/// Standard SELECT columns for transaction queries.
+const TXN_COLUMNS: &str = "t.id, t.account_id, t.date, t.description, t.original_description, \
+     t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at";
+
+/// Build a dynamic SQL param vector and push a new boxed value, returning the placeholder string.
+fn push_param(
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    val: Box<dyn rusqlite::types::ToSql>,
+) -> String {
+    params.push(val);
+    format!("?{}", params.len())
+}
+
+/// Escape LIKE special characters (`%`, `_`, `\`) so they match literally.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
 
 pub(crate) struct Database {
     conn: Connection,
@@ -60,8 +105,8 @@ impl Database {
             })
             .unwrap_or(0);
 
-        for &(from_version, sql) in schema::MIGRATIONS {
-            if current <= from_version {
+        for &(target_version, sql) in schema::MIGRATIONS {
+            if current < target_version {
                 self.conn.execute_batch(sql)?;
             }
         }
@@ -128,7 +173,7 @@ impl Database {
         let tx = self.conn.transaction()?;
         for name in &defaults {
             tx.execute(
-                "INSERT OR IGNORE INTO categories (name, icon, color) VALUES (?1, '', '')",
+                "INSERT OR IGNORE INTO categories (name) VALUES (?1)",
                 params![name],
             )?;
         }
@@ -263,62 +308,45 @@ impl Database {
         search: Option<&str>,
         month: Option<&str>,
     ) -> Result<Vec<Transaction>> {
-        let mut sql = String::from(
-            "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
-                    t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at
-             FROM transactions t WHERE 1=1",
-        );
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut sql = format!("SELECT {TXN_COLUMNS} FROM transactions t WHERE 1=1");
+        let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(aid) = account_id {
-            sql.push_str(&format!(" AND t.account_id = ?{}", param_values.len() + 1));
-            param_values.push(Box::new(aid));
+            let ph = push_param(&mut p, Box::new(aid));
+            sql.push_str(&format!(" AND t.account_id = {ph}"));
         }
         if let Some(cid) = category_id {
-            sql.push_str(&format!(" AND t.category_id = ?{}", param_values.len() + 1));
-            param_values.push(Box::new(cid));
+            let ph = push_param(&mut p, Box::new(cid));
+            sql.push_str(&format!(" AND t.category_id = {ph}"));
         }
         if let Some(s) = search {
+            let escaped = escape_like(s);
+            let ph = push_param(&mut p, Box::new(format!("%{escaped}%")));
             sql.push_str(&format!(
-                " AND (t.description LIKE ?{0} OR t.original_description LIKE ?{0} OR t.notes LIKE ?{0})",
-                param_values.len() + 1
+                " AND (t.description LIKE {ph} ESCAPE '\\' \
+                 OR t.original_description LIKE {ph} ESCAPE '\\' \
+                 OR t.notes LIKE {ph} ESCAPE '\\')"
             ));
-            param_values.push(Box::new(format!("%{s}%")));
         }
         if let Some(m) = month {
-            sql.push_str(&format!(" AND t.date LIKE ?{}", param_values.len() + 1));
-            param_values.push(Box::new(format!("{m}%")));
+            let ph = push_param(&mut p, Box::new(format!("{m}%")));
+            sql.push_str(&format!(" AND t.date LIKE {ph}"));
         }
 
         sql.push_str(" ORDER BY t.date DESC, t.id DESC");
 
         if let Some(l) = limit {
-            sql.push_str(&format!(" LIMIT {l}"));
+            let ph = push_param(&mut p, Box::new(l));
+            sql.push_str(&format!(" LIMIT {ph}"));
         }
         if let Some(o) = offset {
-            sql.push_str(&format!(" OFFSET {o}"));
+            let ph = push_param(&mut p, Box::new(o));
+            sql.push_str(&format!(" OFFSET {ph}"));
         }
 
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
-
+        let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_ref.as_slice(), |row| {
-            let amount_str: String = row.get(5)?;
-            Ok(Transaction {
-                id: Some(row.get(0)?),
-                account_id: row.get(1)?,
-                date: row.get(2)?,
-                description: row.get(3)?,
-                original_description: row.get(4)?,
-                amount: Decimal::from_str(&amount_str).unwrap_or_default(),
-                category_id: row.get(6)?,
-                notes: row.get(7)?,
-                is_transfer: row.get(8)?,
-                import_hash: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?;
+        let rows = stmt.query_map(refs.as_slice(), row_to_transaction)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -358,51 +386,32 @@ impl Database {
         Ok(())
     }
 
+    pub(crate) fn delete_transactions_batch(&mut self, ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let mut count = 0;
+        for &id in ids {
+            count += tx.execute("DELETE FROM transactions WHERE id = ?1", params![id])?;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
     pub(crate) fn get_all_transactions_for_export(
         &self,
         month: Option<&str>,
     ) -> Result<Vec<Transaction>> {
-        let (sql, param_values): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
-            if let Some(m) = month {
-                (
-                    "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
-                        t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at
-                 FROM transactions t WHERE t.date LIKE ?1
-                 ORDER BY t.date DESC, t.id DESC"
-                        .into(),
-                    vec![Box::new(format!("{m}%"))],
-                )
-            } else {
-                (
-                    "SELECT t.id, t.account_id, t.date, t.description, t.original_description,
-                        t.amount, t.category_id, t.notes, t.is_transfer, t.import_hash, t.created_at
-                 FROM transactions t
-                 ORDER BY t.date DESC, t.id DESC"
-                        .into(),
-                    vec![],
-                )
-            };
+        let mut sql = format!("SELECT {TXN_COLUMNS} FROM transactions t");
+        let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
+        if let Some(m) = month {
+            let ph = push_param(&mut p, Box::new(format!("{m}%")));
+            sql.push_str(&format!(" WHERE t.date LIKE {ph}"));
+        }
+        sql.push_str(" ORDER BY t.date DESC, t.id DESC");
 
+        let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_ref.as_slice(), |row| {
-            let amount_str: String = row.get(5)?;
-            Ok(Transaction {
-                id: Some(row.get(0)?),
-                account_id: row.get(1)?,
-                date: row.get(2)?,
-                description: row.get(3)?,
-                original_description: row.get(4)?,
-                amount: Decimal::from_str(&amount_str).unwrap_or_default(),
-                category_id: row.get(6)?,
-                notes: row.get(7)?,
-                is_transfer: row.get(8)?,
-                import_hash: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?;
+        let rows = stmt.query_map(refs.as_slice(), row_to_transaction)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -411,59 +420,44 @@ impl Database {
     pub(crate) fn get_categories(&self) -> Result<Vec<Category>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, name, icon, color FROM categories ORDER BY name")?;
+            .prepare("SELECT id, name FROM categories ORDER BY name")?;
         let rows = stmt.query_map([], |row| {
             Ok(Category {
                 id: Some(row.get(0)?),
                 name: row.get(1)?,
-                icon: row.get(2)?,
-                color: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn get_category_by_id(&self, id: i64) -> Result<Option<Category>> {
-        let result = self.conn.query_row(
-            "SELECT id, name, icon, color FROM categories WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(Category {
-                    id: Some(row.get(0)?),
-                    name: row.get(1)?,
-                    icon: row.get(2)?,
-                    color: row.get(3)?,
-                })
-            },
-        );
-        match result {
-            Ok(c) => Ok(Some(c)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
     pub(crate) fn insert_category(&self, cat: &Category) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO categories (name, icon, color) VALUES (?1, ?2, ?3)",
-            params![cat.name, cat.icon, cat.color],
+            "INSERT INTO categories (name) VALUES (?1)",
+            params![cat.name],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     // ── Budgets ───────────────────────────────────────────────
 
-    pub(crate) fn get_budgets(&self, month: &str) -> Result<Vec<Budget>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, category_id, month, limit_amount FROM budgets WHERE month = ?1")?;
-        let rows = stmt.query_map(params![month], |row| {
+    pub(crate) fn get_budgets(&self, month: Option<&str>) -> Result<Vec<Budget>> {
+        let mut sql =
+            String::from("SELECT id, category_id, month, limit_amount FROM budgets");
+        let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(m) = month {
+            let ph = push_param(&mut p, Box::new(m.to_string()));
+            sql.push_str(&format!(" WHERE month = {ph}"));
+        }
+        sql.push_str(" ORDER BY month DESC");
+        let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(refs.as_slice(), |row| {
             let amt_str: String = row.get(3)?;
             Ok(Budget {
                 id: Some(row.get(0)?),
                 category_id: row.get(1)?,
                 month: row.get(2)?,
-                limit_amount: Decimal::from_str(&amt_str).unwrap_or_default(),
+                limit_amount: parse_decimal(&amt_str),
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -524,42 +518,50 @@ impl Database {
 
     // ── Analytics ─────────────────────────────────────────────
 
-    pub(crate) fn get_spending_by_category(&self, month: &str) -> Result<Vec<(String, Decimal)>> {
-        let mut stmt = self.conn.prepare(
+    pub(crate) fn get_spending_by_category(
+        &self,
+        month: Option<&str>,
+    ) -> Result<Vec<(String, Decimal)>> {
+        let mut sql = String::from(
             "SELECT COALESCE(c.name, 'Uncategorized'), CAST(SUM(t.amount) AS TEXT)
              FROM transactions t
              LEFT JOIN categories c ON t.category_id = c.id
-             WHERE t.date LIKE ?1 AND CAST(t.amount AS REAL) < 0
-             GROUP BY COALESCE(c.name, 'Uncategorized')
+             WHERE CAST(t.amount AS REAL) < 0",
+        );
+        let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(m) = month {
+            let ph = push_param(&mut p, Box::new(format!("{m}%")));
+            sql.push_str(&format!(" AND t.date LIKE {ph}"));
+        }
+        sql.push_str(
+            " GROUP BY COALESCE(c.name, 'Uncategorized')
              ORDER BY SUM(t.amount) ASC",
-        )?;
-        let rows = stmt.query_map(params![format!("{month}%")], |row| {
+        );
+        let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(refs.as_slice(), |row| {
             let name: String = row.get(0)?;
             let amt_str: String = row.get(1)?;
-            Ok((name, Decimal::from_str(&amt_str).unwrap_or_default()))
+            Ok((name, parse_decimal(&amt_str)))
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    pub(crate) fn get_monthly_totals(&self, month: &str) -> Result<(Decimal, Decimal)> {
-        let income: String = self
-            .conn
-            .query_row(
-                "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions WHERE date LIKE ?1 AND CAST(amount AS REAL) > 0",
-                params![format!("{month}%")],
-                |row| row.get(0),
-            )?;
-        let expenses: String = self
-            .conn
-            .query_row(
-                "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions WHERE date LIKE ?1 AND CAST(amount AS REAL) < 0",
-                params![format!("{month}%")],
-                |row| row.get(0),
-            )?;
-        Ok((
-            Decimal::from_str(&income).unwrap_or_default(),
-            Decimal::from_str(&expenses).unwrap_or_default(),
-        ))
+    pub(crate) fn get_monthly_totals(&self, month: Option<&str>) -> Result<(Decimal, Decimal)> {
+        let query_sum = |sign: &str| -> Result<Decimal> {
+            let mut sql = format!(
+                "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions WHERE CAST(amount AS REAL) {sign} 0"
+            );
+            let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            if let Some(m) = month {
+                let ph = push_param(&mut p, Box::new(format!("{m}%")));
+                sql.push_str(&format!(" AND date LIKE {ph}"));
+            }
+            let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
+            let val: String = self.conn.query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+            Ok(parse_decimal(&val))
+        };
+        Ok((query_sum(">")?, query_sum("<")?))
     }
 
     pub(crate) fn get_net_worth(&self) -> Result<Decimal> {
@@ -568,59 +570,46 @@ impl Database {
             [],
             |row| row.get(0),
         )?;
-        Ok(Decimal::from_str(&total).unwrap_or_default())
+        Ok(parse_decimal(&total))
     }
 
     /// Monthly income/expenses filtered by account type(s).
     pub(crate) fn get_monthly_totals_by_account_type(
         &self,
-        month: &str,
+        month: Option<&str>,
         account_types: &[&str],
     ) -> Result<(Decimal, Decimal)> {
-        let placeholders: String = (0..account_types.len())
-            .map(|i| format!("?{}", i + 2))
-            .collect::<Vec<_>>()
-            .join(",");
+        let build_params = |sign: &str| -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
+            let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            let mut sql = String::from(
+                "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
+                 FROM transactions t JOIN accounts a ON t.account_id = a.id
+                 WHERE CAST(t.amount AS REAL)",
+            );
+            sql.push_str(&format!(" {sign} 0"));
+            if let Some(m) = month {
+                let ph = push_param(&mut p, Box::new(format!("{m}%")));
+                sql.push_str(&format!(" AND t.date LIKE {ph}"));
+            }
+            let placeholders: String = account_types
+                .iter()
+                .map(|at| push_param(&mut p, Box::new(at.to_string())))
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND a.account_type IN ({placeholders})"));
+            (sql, p)
+        };
 
-        let income_sql = format!(
-            "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
-             FROM transactions t JOIN accounts a ON t.account_id = a.id
-             WHERE t.date LIKE ?1 AND CAST(t.amount AS REAL) > 0
-               AND a.account_type IN ({placeholders})"
-        );
-        let expenses_sql = format!(
-            "SELECT CAST(COALESCE(SUM(t.amount), 0) AS TEXT)
-             FROM transactions t JOIN accounts a ON t.account_id = a.id
-             WHERE t.date LIKE ?1 AND CAST(t.amount AS REAL) < 0
-               AND a.account_type IN ({placeholders})"
-        );
+        let query_sum = |sign: &str| -> Result<Decimal> {
+            let (sql, p) = build_params(sign);
+            let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
+            let val: String = self
+                .conn
+                .query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+            Ok(parse_decimal(&val))
+        };
 
-        let month_pat = format!("{month}%");
-
-        let mut p1: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        p1.push(Box::new(month_pat.clone()));
-        for at in account_types {
-            p1.push(Box::new(at.to_string()));
-        }
-        let r1: Vec<&dyn rusqlite::types::ToSql> = p1.iter().map(|p| p.as_ref()).collect();
-        let income: String = self
-            .conn
-            .query_row(&income_sql, r1.as_slice(), |row| row.get(0))?;
-
-        let mut p2: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        p2.push(Box::new(month_pat));
-        for at in account_types {
-            p2.push(Box::new(at.to_string()));
-        }
-        let r2: Vec<&dyn rusqlite::types::ToSql> = p2.iter().map(|p| p.as_ref()).collect();
-        let expenses: String = self
-            .conn
-            .query_row(&expenses_sql, r2.as_slice(), |row| row.get(0))?;
-
-        Ok((
-            Decimal::from_str(&income).unwrap_or_default(),
-            Decimal::from_str(&expenses).unwrap_or_default(),
-        ))
+        Ok((query_sum(">")?, query_sum("<")?))
     }
 
     /// All-time balance for accounts of the given type(s).
@@ -634,40 +623,38 @@ impl Database {
              FROM transactions t JOIN accounts a ON t.account_id = a.id
              WHERE a.account_type IN ({placeholders})"
         );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        for at in account_types {
-            params.push(Box::new(at.to_string()));
-        }
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let p: Vec<Box<dyn rusqlite::types::ToSql>> = account_types
+            .iter()
+            .map(|at| Box::new(at.to_string()) as _)
+            .collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
         let total: String = self
             .conn
             .query_row(&sql, refs.as_slice(), |row| row.get(0))?;
-        Ok(Decimal::from_str(&total).unwrap_or_default())
+        Ok(parse_decimal(&total))
     }
 
-    /// Monthly income/expenses for a single account.
+    /// Income/expenses for a single account, optionally filtered by month.
     pub(crate) fn get_account_monthly_totals(
         &self,
         account_id: i64,
-        month: &str,
+        month: Option<&str>,
     ) -> Result<(Decimal, Decimal)> {
-        let month_pat = format!("{month}%");
-        let income: String = self.conn.query_row(
-            "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions
-             WHERE account_id = ?1 AND date LIKE ?2 AND CAST(amount AS REAL) > 0",
-            params![account_id, month_pat],
-            |row| row.get(0),
-        )?;
-        let expenses: String = self.conn.query_row(
-            "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions
-             WHERE account_id = ?1 AND date LIKE ?2 AND CAST(amount AS REAL) < 0",
-            params![account_id, month_pat],
-            |row| row.get(0),
-        )?;
-        Ok((
-            Decimal::from_str(&income).unwrap_or_default(),
-            Decimal::from_str(&expenses).unwrap_or_default(),
-        ))
+        let query_sum = |sign: &str| -> Result<Decimal> {
+            let mut sql = format!(
+                "SELECT CAST(COALESCE(SUM(amount), 0) AS TEXT) FROM transactions WHERE account_id = ?1 AND CAST(amount AS REAL) {sign} 0"
+            );
+            let mut p: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            p.push(Box::new(account_id));
+            if let Some(m) = month {
+                let ph = push_param(&mut p, Box::new(format!("{m}%")));
+                sql.push_str(&format!(" AND date LIKE {ph}"));
+            }
+            let refs: Vec<&dyn rusqlite::types::ToSql> = p.iter().map(|v| v.as_ref()).collect();
+            let val: String = self.conn.query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+            Ok(parse_decimal(&val))
+        };
+        Ok((query_sum(">")?, query_sum("<")?))
     }
 
     /// All-time balance for a single account.
@@ -677,7 +664,7 @@ impl Database {
             params![account_id],
             |row| row.get(0),
         )?;
-        Ok(Decimal::from_str(&total).unwrap_or_default())
+        Ok(parse_decimal(&total))
     }
 
     pub(crate) fn get_monthly_trend(
@@ -697,15 +684,54 @@ impl Database {
             let month: String = row.get(0)?;
             let inc_str: String = row.get(1)?;
             let exp_str: String = row.get(2)?;
-            Ok((
-                month,
-                Decimal::from_str(&inc_str).unwrap_or_default(),
-                Decimal::from_str(&exp_str).unwrap_or_default(),
-            ))
+            Ok((month, parse_decimal(&inc_str), parse_decimal(&exp_str)))
         })?;
         let mut result: Vec<_> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         result.reverse();
         Ok(result)
+    }
+
+    /// Export transactions to a CSV file. Returns the number of transactions written.
+    pub(crate) fn export_to_csv(
+        &self,
+        path: &str,
+        month: Option<&str>,
+    ) -> Result<usize> {
+        let txns = self.get_all_transactions_for_export(month)?;
+        if txns.is_empty() {
+            return Ok(0);
+        }
+
+        let categories = self.get_categories()?;
+        let accounts = self.get_accounts()?;
+
+        let mut wtr =
+            csv::Writer::from_path(path).context("Failed to create export file")?;
+        wtr.write_record(["Date", "Description", "Amount", "Category", "Account", "Notes"])?;
+
+        for txn in &txns {
+            let cat_name = txn
+                .category_id
+                .and_then(|cid| Category::find_by_id(&categories, cid))
+                .map(|c| c.name.as_str())
+                .unwrap_or("");
+            let acct_name = accounts
+                .iter()
+                .find(|a| a.id == Some(txn.account_id))
+                .map(|a| a.name.as_str())
+                .unwrap_or("");
+            wtr.write_record([
+                &txn.date,
+                &txn.description,
+                &txn.amount.to_string(),
+                cat_name,
+                acct_name,
+                &txn.notes,
+            ])?;
+        }
+
+        wtr.flush()?;
+        Ok(txns.len())
     }
 }
 

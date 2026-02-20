@@ -6,11 +6,12 @@ use ratatui::{
     Frame,
 };
 
+use crate::models::Category;
 use crate::ui::app::App;
 use crate::ui::theme;
 use crate::ui::util::truncate;
 
-pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, String)]) {
+pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.transactions.is_empty() {
         let msg = if !app.search_input.is_empty() {
             vec![
@@ -57,6 +58,8 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
         .map(|h| Cell::from(*h).style(theme::header_style()));
     let header = Row::new(header_cells).height(1);
 
+    let has_selections = !app.selected_transactions.is_empty();
+
     let rows: Vec<Row> = app
         .transactions
         .iter()
@@ -64,10 +67,15 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
         .skip(app.transaction_scroll)
         .take(area.height.saturating_sub(3) as usize)
         .map(|(i, txn)| {
+            let is_selected = txn
+                .id
+                .is_some_and(|id| app.selected_transactions.contains(&id));
+            let is_cursor = i == app.transaction_index;
+
             let cat_name = txn
                 .category_id
-                .and_then(|cid| categories.iter().find(|(id, _)| *id == cid))
-                .map(|(_, name)| name.as_str())
+                .and_then(|cid| Category::find_by_id(&app.categories, cid))
+                .map(|c| c.name.as_str())
                 .unwrap_or("—");
 
             let amount_style = if txn.is_income() {
@@ -79,8 +87,18 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
             let sign = if txn.is_income() { "+" } else { "" };
             let amount_str = format!("{sign}${:.2}", txn.abs_amount());
 
-            let style = if i == app.transaction_index {
+            let date_cell = if is_selected {
+                format!("\u{2022} {}", txn.date)
+            } else {
+                format!("  {}", txn.date)
+            };
+
+            let style = if is_cursor && is_selected {
+                Style::default().fg(theme::HEADER_BG).bg(theme::YELLOW)
+            } else if is_cursor {
                 theme::selected_style()
+            } else if is_selected {
+                Style::default().fg(theme::YELLOW)
             } else if i % 2 == 1 {
                 theme::alt_row_style()
             } else {
@@ -88,7 +106,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
             };
 
             Row::new(vec![
-                Cell::from(txn.date.as_str()),
+                Cell::from(date_cell),
                 Cell::from(truncate(&txn.description, 40)),
                 Cell::from(cat_name),
                 Cell::from(Span::styled(amount_str, amount_style)),
@@ -98,7 +116,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
         .collect();
 
     let widths = [
-        Constraint::Length(12),
+        Constraint::Length(14),
         Constraint::Min(20),
         Constraint::Length(18),
         Constraint::Length(14),
@@ -110,8 +128,13 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, categories: &[(i64, S
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 format!(
-                    " Transactions ({}) {} ",
+                    " Transactions ({}) {}{} ",
                     app.transactions.len(),
+                    if has_selections {
+                        format!("[{} selected] ", app.selected_transactions.len())
+                    } else {
+                        String::new()
+                    },
                     if !app.search_input.is_empty() {
                         format!("search: '{}'", app.search_input)
                     } else {

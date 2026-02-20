@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::models::Category;
 use crate::ui::app::App;
 use crate::ui::theme;
 
@@ -120,10 +121,7 @@ fn render_rules_list(f: &mut Frame, area: Rect, app: &App) {
         .skip(app.rule_scroll)
         .take(rule_rows)
         .map(|(i, rule)| {
-            let cat_name = app
-                .categories
-                .iter()
-                .find(|c| c.id == Some(rule.category_id))
+            let cat_name = Category::find_by_id(&app.categories, rule.category_id)
                 .map(|c| c.name.as_str())
                 .unwrap_or("?");
 

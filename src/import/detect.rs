@@ -8,8 +8,12 @@ pub(crate) fn detect_bank_format(headers: &[String], first_row: &[String]) -> Op
         .map(|s| s.to_lowercase().trim().to_string())
         .collect();
 
-    // Wells Fargo: no headers, 5 columns, col[2] == "*"
-    if headers.is_empty() && first_row.len() == 5 && first_row.get(2).map(|s| s.trim()) == Some("*")
+    // Wells Fargo: no real headers, 5 columns, col[2] == "*"
+    // When preview() generates headers for headerless CSVs, they look like "Column 1", etc.
+    let has_generated_headers = h.first().is_some_and(|s| s.starts_with("column "));
+    if (headers.is_empty() || has_generated_headers)
+        && first_row.len() == 5
+        && first_row.get(2).map(|s| s.trim()) == Some("*")
     {
         return Some(CsvProfile {
             name: "Wells Fargo".into(),

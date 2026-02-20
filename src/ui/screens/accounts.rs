@@ -7,7 +7,6 @@ use ratatui::{
 };
 use rust_decimal::Decimal;
 
-use crate::models::AccountType;
 use crate::ui::app::App;
 use crate::ui::theme;
 
@@ -50,10 +49,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
         .skip(app.accounts_tab_scroll)
         .take(cards_per_page)
         .map(|(i, snap)| {
-            let is_credit = matches!(
-                snap.account.account_type,
-                AccountType::CreditCard | AccountType::Loan
-            );
+            let is_credit = snap.account.account_type.is_credit();
             let selected = i == app.accounts_tab_index;
 
             let border_color = if selected {

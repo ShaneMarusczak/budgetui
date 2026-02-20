@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Sparkline},
+    widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph},
     Frame,
 };
 use rust_decimal::prelude::ToPrimitive;
@@ -15,12 +15,13 @@ use crate::ui::util::truncate;
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
+        .spacing(1)
         .constraints([
-            Constraint::Length(5), // Debit accounts row
-            Constraint::Length(5), // Credit accounts row
-            Constraint::Length(3), // Net worth
-            Constraint::Min(8),    // Charts
-            Constraint::Length(3), // Monthly trend sparkline
+            Constraint::Length(5),  // Debit accounts row
+            Constraint::Length(5),  // Credit accounts row
+            Constraint::Length(3),  // Net worth
+            Constraint::Min(8),    // Spending by category
+            Constraint::Length(5),  // Monthly trend
         ])
         .split(area);
 
@@ -28,7 +29,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     render_credit_row(f, chunks[1], app);
     render_net_worth(f, chunks[2], app);
     render_spending_chart(f, chunks[3], app);
-    render_trend_sparkline(f, chunks[4], app);
+    render_trend_chart(f, chunks[4], app);
 }
 
 fn render_debit_row(f: &mut Frame, area: Rect, app: &App) {
@@ -223,8 +224,10 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
 
     let count = categories.len();
     let inner_rows = inner.height as usize;
+    // Use 2 rows per category (bar + blank) when space allows, else 1
     let rows_per = if count > 0 {
-        (inner_rows / count).max(1)
+        let natural = inner_rows / count;
+        if natural >= 2 { natural } else { 1 }
     } else {
         1
     };
@@ -275,27 +278,97 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(chart, area);
 }
 
-fn render_trend_sparkline(f: &mut Frame, area: Rect, app: &App) {
-    let data: Vec<u64> = app
+fn render_trend_chart(f: &mut Frame, area: Rect, app: &App) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme::OVERLAY))
+        .title(Span::styled(
+            " Monthly Spending Trend ",
+            Style::default()
+                .fg(theme::TEXT_DIM)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    if app.monthly_trend.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            "No trend data yet",
+            theme::dim_style(),
+        )))
+        .centered()
+        .block(block);
+        f.render_widget(msg, area);
+        return;
+    }
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Show up to 12 most recent months
+    let visible: Vec<_> = app
         .monthly_trend
         .iter()
-        .map(|(_, _, exp)| exp.abs().to_u64().unwrap_or(0))
+        .rev()
+        .take(12)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
         .collect();
 
-    let sparkline = Sparkline::default()
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::OVERLAY))
-                .title(Span::styled(
-                    " Monthly Spending Trend ",
-                    Style::default()
-                        .fg(theme::TEXT_DIM)
-                        .add_modifier(Modifier::BOLD),
-                )),
-        )
-        .data(&data)
-        .style(Style::default().fg(theme::YELLOW));
+    let n = visible.len();
+    let width = inner.width as usize;
 
-    f.render_widget(sparkline, area);
+    // Compute bar_width and bar_gap to distribute evenly
+    // Each slot = bar_width + bar_gap (last bar has no trailing gap)
+    // total = n * bar_width + (n-1) * bar_gap
+    // Target: bar ~55% of slot, gap ~45%
+    let slot = if n > 0 { width / n } else { 1 };
+    let bar_w = (slot * 5 / 9).clamp(3, 7) as u16;
+    let bar_g = (slot as u16).saturating_sub(bar_w).max(1);
+
+    // Center horizontally
+    let total_used = (n as u16) * bar_w + (n as u16).saturating_sub(1) * bar_g;
+    let left_pad = inner.width.saturating_sub(total_used) / 2;
+
+    let chart_rect = Rect::new(
+        inner.x + left_pad,
+        inner.y,
+        total_used.min(inner.width),
+        inner.height,
+    );
+
+    let bars: Vec<Bar> = visible
+        .iter()
+        .map(|(month_str, _income, expenses)| {
+            let label = parse_month_label(month_str);
+            let val = expenses.abs().to_f64().unwrap_or(0.0) as u64;
+            Bar::default()
+                .value(val)
+                .text_value(String::new())
+                .label(Line::from(Span::styled(
+                    label,
+                    Style::default().fg(theme::TEXT_DIM),
+                )))
+                .style(Style::default().fg(theme::ACCENT))
+        })
+        .collect();
+
+    let chart = BarChart::default()
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(bar_w)
+        .bar_gap(bar_g);
+
+    f.render_widget(chart, chart_rect);
+}
+
+/// Parse "YYYY-MM" into single-letter month label.
+fn parse_month_label(month_str: &str) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D",
+    ];
+    month_str
+        .get(5..7)
+        .and_then(|m| m.parse::<usize>().ok())
+        .and_then(|m| MONTHS.get(m.wrapping_sub(1)))
+        .copied()
+        .unwrap_or("?")
 }
