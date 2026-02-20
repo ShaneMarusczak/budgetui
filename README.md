@@ -1,6 +1,6 @@
 # BudgeTUI
 
-[![Rust](https://github.com/ShaneMarusczak/budgetui/actions/workflows/rust.yml/badge.svg?branch=main&event=push)](https://github.com/ShaneMarusczak/budgetui/actions/workflows/rust.yml)
+[![Rust](https://github.com/ShaneMarusczak/budgetui/workflows/Rust/badge.svg)](https://github.com/ShaneMarusczak/budgetui/actions/workflows/rust.yml)
 
 A local-only, privacy-first personal finance tracker for the terminal.
 
