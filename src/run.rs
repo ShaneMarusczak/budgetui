@@ -689,8 +689,7 @@ fn handle_move_down(app: &mut App) {
                     app.file_browser_index += 1;
                     let page = app.visible_rows.max(1);
                     if app.file_browser_index >= app.file_browser_scroll + page {
-                        app.file_browser_scroll =
-                            app.file_browser_index.saturating_sub(page - 1);
+                        app.file_browser_scroll = app.file_browser_index.saturating_sub(page - 1);
                     }
                 }
             }

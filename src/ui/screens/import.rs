@@ -84,7 +84,10 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
         ),
     ];
     if !app.file_browser_filter.is_empty() || input_focused {
-        spans.push(Span::styled("  Filter: ", Style::default().fg(theme::TEXT_DIM)));
+        spans.push(Span::styled(
+            "  Filter: ",
+            Style::default().fg(theme::TEXT_DIM),
+        ));
         spans.push(Span::styled(
             &app.file_browser_filter,
             Style::default().fg(theme::TEXT),

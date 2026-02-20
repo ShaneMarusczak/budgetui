@@ -333,7 +333,10 @@ impl App {
                     (self.file_browser_show_hidden || !is_hidden(p))
                         && (p.is_dir()
                             || p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-                                matches!(ext.to_ascii_lowercase().as_str(), "csv" | "tsv" | "ofx" | "qfx" | "qif")
+                                matches!(
+                                    ext.to_ascii_lowercase().as_str(),
+                                    "csv" | "tsv" | "ofx" | "qfx" | "qif"
+                                )
                             }))
                 })
                 .collect();
