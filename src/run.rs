@@ -309,6 +309,14 @@ fn run_app(
 // ── Input handlers ───────────────────────────────────────────
 
 fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -> Result<()> {
+    // File browser path input has its own key handling
+    if app.screen == Screen::Import
+        && app.import_step == ImportStep::SelectFile
+        && app.file_browser_input_focused
+    {
+        return handle_file_browser_input(key, app);
+    }
+
     match key.code {
         KeyCode::Char(':') => {
             app.input_mode = InputMode::Command;
@@ -328,6 +336,11 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         KeyCode::Char('3') => switch_screen(app, db, Screen::Import)?,
         KeyCode::Char('4') => switch_screen(app, db, Screen::Categories)?,
         KeyCode::Char('5') => switch_screen(app, db, Screen::Budgets)?,
+        KeyCode::Tab
+            if app.screen == Screen::Import && app.import_step == ImportStep::SelectFile =>
+        {
+            app.file_browser_input_focused = true;
+        }
         KeyCode::Tab => {
             let screens = Screen::all();
             let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
@@ -344,6 +357,12 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         KeyCode::Esc => handle_escape(app),
         KeyCode::Char('+') | KeyCode::Char('=') => handle_adjust_field(app, 1),
         KeyCode::Char('-') => handle_adjust_field(app, -1),
+        KeyCode::Char('.')
+            if app.screen == Screen::Import && app.import_step == ImportStep::SelectFile =>
+        {
+            app.file_browser_show_hidden = !app.file_browser_show_hidden;
+            app.refresh_file_browser();
+        }
         KeyCode::Char('g') => handle_goto_top(app),
         KeyCode::Char('G') => handle_goto_bottom(app),
         KeyCode::Char('?') => {
@@ -390,6 +409,59 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
         }
         KeyCode::Char('D') if app.screen == Screen::Transactions => {
             commands::handle_command("delete-txn", app, db)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_file_browser_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+    match key.code {
+        KeyCode::Char(c) => {
+            app.file_browser_filter.push(c);
+            app.file_browser_index = 0;
+            app.file_browser_scroll = 0;
+        }
+        KeyCode::Backspace => {
+            if app.file_browser_filter.pop().is_none() {
+                // Filter was already empty — go to parent directory
+                if let Some(parent) = app.file_browser_path.parent().map(|p| p.to_path_buf()) {
+                    app.file_browser_path = parent;
+                    app.refresh_file_browser();
+                }
+            }
+            app.file_browser_index = 0;
+            app.file_browser_scroll = 0;
+        }
+        KeyCode::Down | KeyCode::Tab => {
+            app.file_browser_input_focused = false;
+        }
+        KeyCode::Esc => {
+            if !app.file_browser_filter.is_empty() {
+                app.file_browser_filter.clear();
+                app.file_browser_index = 0;
+                app.file_browser_scroll = 0;
+            } else {
+                app.file_browser_input_focused = false;
+            }
+        }
+        KeyCode::Enter => {
+            let filtered = app.file_browser_filtered();
+            if filtered.len() == 1 {
+                let path = app.file_browser_entries[filtered[0]].clone();
+                if path.is_dir() {
+                    app.file_browser_path = path;
+                    app.refresh_file_browser();
+                } else {
+                    app.import_path = path.display().to_string();
+                    if let Err(e) = app.load_import_file() {
+                        app.set_status(format!("Error loading file: {e}"));
+                    }
+                }
+            } else {
+                // Multiple matches — switch to list to pick one
+                app.file_browser_input_focused = false;
+            }
         }
         _ => {}
     }
@@ -612,8 +684,14 @@ fn handle_move_down(app: &mut App) {
         }
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => {
-                if app.file_browser_index + 1 < app.file_browser_entries.len() {
+                let filtered_len = app.file_browser_filtered().len();
+                if app.file_browser_index + 1 < filtered_len {
                     app.file_browser_index += 1;
+                    let page = app.visible_rows.max(1);
+                    if app.file_browser_index >= app.file_browser_scroll + page {
+                        app.file_browser_scroll =
+                            app.file_browser_index.saturating_sub(page - 1);
+                    }
                 }
             }
             ImportStep::MapColumns => {
@@ -649,7 +727,15 @@ fn handle_move_up(app: &mut App) {
         }
         Screen::Import => match app.import_step {
             ImportStep::SelectFile => {
-                app.file_browser_index = app.file_browser_index.saturating_sub(1);
+                if app.file_browser_index == 0 {
+                    // At top of list — focus the filter input
+                    app.file_browser_input_focused = true;
+                } else {
+                    app.file_browser_index = app.file_browser_index.saturating_sub(1);
+                    if app.file_browser_index < app.file_browser_scroll {
+                        app.file_browser_scroll = app.file_browser_index;
+                    }
+                }
             }
             ImportStep::MapColumns => {
                 app.import_selected_field = app.import_selected_field.saturating_sub(1);
@@ -667,11 +753,9 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
     if app.screen == Screen::Import {
         match app.import_step {
             ImportStep::SelectFile => {
-                if let Some(path) = app
-                    .file_browser_entries
-                    .get(app.file_browser_index)
-                    .cloned()
-                {
+                let filtered = app.file_browser_filtered();
+                if let Some(&real_idx) = filtered.get(app.file_browser_index) {
+                    let path = app.file_browser_entries[real_idx].clone();
                     if path.is_dir() {
                         app.file_browser_path = path;
                         app.refresh_file_browser();
@@ -711,6 +795,15 @@ fn handle_enter(app: &mut App, db: &mut Database) -> Result<()> {
 fn handle_escape(app: &mut App) {
     match app.screen {
         Screen::Import => match app.import_step {
+            ImportStep::SelectFile => {
+                if !app.file_browser_filter.is_empty() {
+                    app.file_browser_filter.clear();
+                    app.file_browser_index = 0;
+                    app.file_browser_scroll = 0;
+                } else {
+                    app.screen = Screen::Dashboard;
+                }
+            }
             ImportStep::MapColumns => {
                 app.import_step = ImportStep::SelectFile;
             }
@@ -825,6 +918,7 @@ fn handle_goto_top(app: &mut App) {
         }
         Screen::Import if app.import_step == ImportStep::SelectFile => {
             app.file_browser_index = 0;
+            app.file_browser_scroll = 0;
         }
         _ => {}
     }
@@ -849,8 +943,11 @@ fn handle_goto_bottom(app: &mut App) {
             }
         }
         Screen::Import if app.import_step == ImportStep::SelectFile => {
-            if !app.file_browser_entries.is_empty() {
-                app.file_browser_index = app.file_browser_entries.len() - 1;
+            let filtered_len = app.file_browser_filtered().len();
+            if filtered_len > 0 {
+                app.file_browser_index = filtered_len - 1;
+                let page = app.visible_rows.max(1);
+                app.file_browser_scroll = app.file_browser_index.saturating_sub(page - 1);
             }
         }
         _ => {}

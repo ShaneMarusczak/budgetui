@@ -142,6 +142,10 @@ pub(crate) struct App {
     pub(crate) file_browser_path: PathBuf,
     pub(crate) file_browser_entries: Vec<PathBuf>,
     pub(crate) file_browser_index: usize,
+    pub(crate) file_browser_scroll: usize,
+    pub(crate) file_browser_filter: String,
+    pub(crate) file_browser_show_hidden: bool,
+    pub(crate) file_browser_input_focused: bool,
 
     // Confirmation
     pub(crate) pending_action: Option<PendingAction>,
@@ -205,6 +209,10 @@ impl App {
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
             file_browser_entries: Vec::new(),
             file_browser_index: 0,
+            file_browser_scroll: 0,
+            file_browser_filter: String::new(),
+            file_browser_show_hidden: false,
+            file_browser_input_focused: false,
 
             pending_action: None,
             confirm_message: String::new(),
@@ -312,22 +320,61 @@ impl App {
         }
 
         if let Ok(read_dir) = std::fs::read_dir(&self.file_browser_path) {
-            let mut dir_entries: Vec<PathBuf> = read_dir
+            let is_hidden = |p: &PathBuf| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with('.'))
+            };
+
+            let all: Vec<PathBuf> = read_dir
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
                 .filter(|p| {
-                    p.is_dir()
-                        || p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
-                            matches!(ext, "csv" | "CSV" | "tsv" | "ofx" | "qfx" | "qif")
-                        })
+                    (self.file_browser_show_hidden || !is_hidden(p))
+                        && (p.is_dir()
+                            || p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                                matches!(ext.to_ascii_lowercase().as_str(), "csv" | "tsv" | "ofx" | "qfx" | "qif")
+                            }))
                 })
                 .collect();
-            dir_entries.sort();
-            entries.extend(dir_entries);
+
+            // Dirs first, then files, each sorted alphabetically
+            let mut dirs: Vec<PathBuf> = all.iter().filter(|p| p.is_dir()).cloned().collect();
+            let mut files: Vec<PathBuf> = all.iter().filter(|p| !p.is_dir()).cloned().collect();
+            dirs.sort();
+            files.sort();
+            entries.extend(dirs);
+            entries.extend(files);
         }
 
         self.file_browser_entries = entries;
         self.file_browser_index = 0;
+        self.file_browser_scroll = 0;
+        self.file_browser_filter.clear();
+        self.file_browser_input_focused = false;
+    }
+
+    /// Returns filtered file browser entries (indices into `file_browser_entries`).
+    /// When filter is empty, returns all. The `..` entry always passes.
+    pub(crate) fn file_browser_filtered(&self) -> Vec<usize> {
+        if self.file_browser_filter.is_empty() {
+            return (0..self.file_browser_entries.len()).collect();
+        }
+        let filter = self.file_browser_filter.to_ascii_lowercase();
+        self.file_browser_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, path)| {
+                // Parent (..) always passes
+                if Some(path.as_path()) == self.file_browser_path.parent() {
+                    return true;
+                }
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|name| name.to_ascii_lowercase().contains(&filter))
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
 
     pub(crate) fn set_status(&mut self, msg: impl Into<String>) {

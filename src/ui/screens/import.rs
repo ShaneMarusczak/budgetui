@@ -74,17 +74,35 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(area);
 
-    let path_display = Paragraph::new(Line::from(vec![
+    // Path input box — shows current path + filter text when focused
+    let input_focused = app.file_browser_input_focused;
+    let mut spans = vec![
         Span::styled(" Path: ", Style::default().fg(theme::TEXT_DIM)),
         Span::styled(
             app.file_browser_path.display().to_string(),
             Style::default().fg(theme::ACCENT),
         ),
-    ]))
-    .block(
+    ];
+    if !app.file_browser_filter.is_empty() || input_focused {
+        spans.push(Span::styled("  Filter: ", Style::default().fg(theme::TEXT_DIM)));
+        spans.push(Span::styled(
+            &app.file_browser_filter,
+            Style::default().fg(theme::TEXT),
+        ));
+        if input_focused {
+            spans.push(Span::styled("█", Style::default().fg(theme::ACCENT)));
+        }
+    }
+
+    let input_border = if input_focused {
+        theme::ACCENT
+    } else {
+        theme::OVERLAY
+    };
+    let path_display = Paragraph::new(Line::from(spans)).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme::OVERLAY))
+            .border_style(Style::default().fg(input_border))
             .title(Span::styled(
                 " Select CSV File ",
                 Style::default()
@@ -94,11 +112,15 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
     );
     f.render_widget(path_display, chunks[0]);
 
-    let items: Vec<ListItem> = app
-        .file_browser_entries
+    // File list — uses filtered entries with viewport scrolling
+    let filtered = app.file_browser_filtered();
+    let items: Vec<ListItem> = filtered
         .iter()
         .enumerate()
-        .map(|(i, path)| {
+        .skip(app.file_browser_scroll)
+        .take(app.visible_rows)
+        .map(|(display_idx, &real_idx)| {
+            let path = &app.file_browser_entries[real_idx];
             let name = if Some(path.as_path()) == app.file_browser_path.parent() {
                 "📁 ..".to_string()
             } else if path.is_dir() {
@@ -113,7 +135,7 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
                 )
             };
 
-            let style = if i == app.file_browser_index {
+            let style = if display_idx == app.file_browser_index {
                 theme::selected_style()
             } else {
                 theme::normal_style()
@@ -123,12 +145,22 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
+    let list_border = if input_focused {
+        theme::OVERLAY
+    } else {
+        theme::ACCENT
+    };
+    let hidden_hint = if app.file_browser_show_hidden {
+        " . hide dotfiles"
+    } else {
+        " . show dotfiles"
+    };
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme::OVERLAY))
+            .border_style(Style::default().fg(list_border))
             .title(Span::styled(
-                " j/k to navigate, Enter to select, Esc to cancel ",
+                format!(" Tab to filter | j/k nav | Enter select |{hidden_hint} | Esc back "),
                 theme::dim_style(),
             )),
     );
