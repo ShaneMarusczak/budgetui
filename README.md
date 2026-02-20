@@ -1,5 +1,7 @@
 # BudgeTUI
 
+[![Rust](https://github.com/ShaneMarusczak/budgetui/actions/workflows/rust.yml/badge.svg?branch=main&event=push)](https://github.com/ShaneMarusczak/budgetui/actions/workflows/rust.yml)
+
 A local-only, privacy-first personal finance tracker for the terminal.
 
 BudgeTUI gives you full control over your financial data without ever sending it to the cloud. Import bank CSVs, categorize transactions, set budgets, and track spending — all from a fast, keyboard-driven terminal interface with a Catppuccin Mocha color scheme.
