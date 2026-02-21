@@ -223,6 +223,7 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
     let bar_area = width.saturating_sub(label_width + amount_width + 2); // 2 for spacing
 
     let count = categories.len();
+
     let inner_rows = inner.height as usize;
     // Use 2 rows per category (bar + blank) when space allows, else 1
     let rows_per = if count > 0 {
@@ -239,7 +240,7 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
 
     for (i, (name, amt)) in categories.iter().enumerate() {
-        let color = theme::CHART_COLORS[i % theme::CHART_COLORS.len()];
+        let color = theme::SPENDING_COLORS[i % theme::SPENDING_COLORS.len()];
         let val = amt.to_f64().unwrap_or(0.0);
         let bar_len = if max_val > 0.0 {
             ((val / max_val) * bar_area as f64).round() as usize

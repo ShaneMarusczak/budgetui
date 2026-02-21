@@ -551,7 +551,7 @@ fn render_categorize(f: &mut Frame, area: Rect, app: &App) {
     if app.import_cat_creating {
         items.push(ListItem::new(Line::from(vec![
             Span::styled(
-                "  + New: ",
+                "  + New category: ",
                 Style::default()
                     .fg(theme::GREEN)
                     .add_modifier(Modifier::BOLD),
@@ -561,17 +561,20 @@ fn render_categorize(f: &mut Frame, area: Rect, app: &App) {
         ])));
     }
 
+    let title = if app.import_cat_creating {
+        " New Category (Enter create | Esc cancel) ".to_string()
+    } else {
+        format!(
+            " Categories ({}) | Enter assign | s skip | S skip all | n new ",
+            app.categories.len()
+        )
+    };
+
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme::OVERLAY))
-            .title(Span::styled(
-                format!(
-                    " Categories ({}) | Enter assign | s skip | S skip all | n new ",
-                    app.categories.len()
-                ),
-                theme::dim_style(),
-            )),
+            .title(Span::styled(title, theme::dim_style())),
     );
     f.render_widget(list, chunks[1]);
 }

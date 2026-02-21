@@ -413,6 +413,20 @@ fn handle_categorize_input(key: event::KeyEvent, app: &mut App, db: &mut Databas
                 scroll_up(&mut app.import_cat_selected, &mut app.import_cat_scroll);
             }
         }
+        KeyCode::Char(c) => {
+            let lower = c.to_ascii_lowercase();
+            if let Some(idx) = app.categories.iter().position(|cat| {
+                cat.name
+                    .starts_with(|ch: char| ch.to_ascii_lowercase() == lower)
+            }) {
+                app.import_cat_selected = idx;
+                if idx < app.import_cat_scroll {
+                    app.import_cat_scroll = idx;
+                } else if idx >= app.import_cat_scroll + page {
+                    app.import_cat_scroll = idx.saturating_sub(page.saturating_sub(1));
+                }
+            }
+        }
         _ => {}
     }
     Ok(())

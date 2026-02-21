@@ -12,17 +12,20 @@ pub(crate) const TEXT_DIM: Color = Color::Rgb(127, 132, 156);
 pub(crate) const OVERLAY: Color = Color::Rgb(69, 71, 90);
 pub(crate) const COMMAND_BG: Color = Color::Rgb(24, 24, 37);
 
-pub(crate) const CHART_COLORS: [Color; 10] = [
-    Color::Rgb(243, 139, 168), // Red
-    Color::Rgb(250, 179, 135), // Peach
-    Color::Rgb(249, 226, 175), // Yellow
-    Color::Rgb(166, 227, 161), // Green
-    Color::Rgb(148, 226, 213), // Teal
-    Color::Rgb(137, 180, 250), // Blue
-    Color::Rgb(203, 166, 247), // Mauve
-    Color::Rgb(245, 194, 231), // Pink
-    Color::Rgb(116, 199, 236), // Sapphire
-    Color::Rgb(180, 190, 254), // Lavender
+/// 12 shades of blue by rank: lightest (lowest spender) to deepest (highest).
+pub(crate) const SPENDING_COLORS: [Color; 12] = [
+    Color::Rgb(198, 219, 252), // 0  — ice
+    Color::Rgb(180, 208, 250), // 1
+    Color::Rgb(162, 197, 248), // 2
+    Color::Rgb(147, 186, 246), // 3
+    Color::Rgb(132, 175, 244), // 4
+    Color::Rgb(117, 164, 240), // 5
+    Color::Rgb(102, 153, 234), // 6
+    Color::Rgb(87, 140, 226),  // 7
+    Color::Rgb(72, 127, 218),  // 8
+    Color::Rgb(58, 114, 208),  // 9
+    Color::Rgb(45, 101, 198),  // 10
+    Color::Rgb(33, 88, 188),   // 11 — deep
 ];
 
 pub(crate) fn header_style() -> Style {
