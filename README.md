@@ -106,6 +106,7 @@ budgetui --help
 | `?` | Show help overlay |
 | `D` | Delete selected transaction (on Transactions screen) |
 | `r` | Toggle rules panel (on Categories screen) |
+| `a`-`z` | Jump to first matching category (Import Categorize step) |
 | `n` / `p` | Cycle accounts (on Dashboard) |
 | `Ctrl-q` | Quit |
 
