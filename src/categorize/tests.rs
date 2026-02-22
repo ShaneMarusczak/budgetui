@@ -33,7 +33,7 @@ fn make_txn(desc: &str) -> Transaction {
 #[test]
 fn test_categorize_contains_match() {
     let rules = vec![make_rule("coffee", 1), make_rule("amazon", 2)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("STARBUCKS COFFEE #123"), Some(1));
     assert_eq!(cat.categorize("AMAZON.COM PURCHASE"), Some(2));
 }
@@ -41,7 +41,7 @@ fn test_categorize_contains_match() {
 #[test]
 fn test_categorize_case_insensitive() {
     let rules = vec![make_rule("coffee", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("Coffee Shop"), Some(1));
     assert_eq!(cat.categorize("COFFEE SHOP"), Some(1));
     assert_eq!(cat.categorize("coffee shop"), Some(1));
@@ -50,14 +50,14 @@ fn test_categorize_case_insensitive() {
 #[test]
 fn test_categorize_no_match() {
     let rules = vec![make_rule("coffee", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("GROCERY STORE"), None);
 }
 
 #[test]
 fn test_categorize_first_match_wins() {
     let rules = vec![make_rule("shop", 1), make_rule("coffee shop", 2)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     // "shop" matches first
     assert_eq!(cat.categorize("Coffee Shop"), Some(1));
 }
@@ -65,7 +65,7 @@ fn test_categorize_first_match_wins() {
 #[test]
 fn test_categorize_regex() {
     let rules = vec![make_regex_rule(r"^AMZN.*MKTP", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("AMZN MKTP US*2A1B3C"), Some(1));
     assert_eq!(cat.categorize("AMAZON.COM"), None);
 }
@@ -74,7 +74,7 @@ fn test_categorize_regex() {
 fn test_categorize_regex_case_insensitive() {
     // Regex matching is case-insensitive (consistent with contains rules)
     let rules = vec![make_regex_rule(r"STARBUCKS", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("STARBUCKS COFFEE"), Some(1));
     assert_eq!(cat.categorize("starbucks coffee"), Some(1));
     assert_eq!(cat.categorize("Starbucks Coffee"), Some(1));
@@ -84,7 +84,7 @@ fn test_categorize_regex_case_insensitive() {
 fn test_categorize_regex_pattern_match() {
     // Test regex patterns with quantifiers and anchors
     let rules = vec![make_regex_rule(r"^SQ \*", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("SQ *COFFEE SHOP"), Some(1));
     assert_eq!(cat.categorize("NOT SQ *COFFEE"), None);
 }
@@ -92,22 +92,23 @@ fn test_categorize_regex_pattern_match() {
 #[test]
 fn test_categorize_invalid_regex_skipped() {
     let rules = vec![make_regex_rule(r"[invalid", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, bad) = Categorizer::new(&rules);
     // Invalid regex compiles to None, match returns false
     assert_eq!(cat.categorize("anything"), None);
+    assert_eq!(bad, vec!["[invalid"]);
 }
 
 #[test]
 fn test_categorize_empty_rules() {
     let rules: Vec<ImportRule> = vec![];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("anything"), None);
 }
 
 #[test]
 fn test_categorize_empty_description() {
     let rules = vec![make_rule("", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     // Empty pattern matches everything (contains "")
     assert_eq!(cat.categorize("anything"), Some(1));
 }
@@ -120,7 +121,7 @@ fn test_categorize_mixed_rules() {
         make_regex_rule(r"^AMZN", 2),
         make_rule("target", 3),
     ];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     assert_eq!(cat.categorize("WALMART SUPERCENTER"), Some(1));
     assert_eq!(cat.categorize("AMZN MKTP US"), Some(2));
     assert_eq!(cat.categorize("TARGET STORE #123"), Some(3));
@@ -132,7 +133,7 @@ fn test_categorize_mixed_rules() {
 #[test]
 fn test_categorize_batch() {
     let rules = vec![make_rule("coffee", 1), make_rule("grocery", 2)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     let mut txns = vec![
         make_txn("COFFEE SHOP"),
         make_txn("GROCERY STORE"),
@@ -147,7 +148,7 @@ fn test_categorize_batch() {
 #[test]
 fn test_categorize_batch_preserves_existing() {
     let rules = vec![make_rule("coffee", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     let mut txns = vec![make_txn("COFFEE SHOP")];
     txns[0].category_id = Some(99); // Already categorized
     cat.categorize_batch(&mut txns);
@@ -157,7 +158,7 @@ fn test_categorize_batch_preserves_existing() {
 #[test]
 fn test_categorize_batch_empty() {
     let rules = vec![make_rule("coffee", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     let mut txns: Vec<Transaction> = vec![];
     cat.categorize_batch(&mut txns); // Should not panic
     assert!(txns.is_empty());
@@ -166,7 +167,7 @@ fn test_categorize_batch_empty() {
 #[test]
 fn test_categorize_batch_uses_original_description() {
     let rules = vec![make_rule("starbucks", 1)];
-    let cat = Categorizer::new(&rules);
+    let (cat, _) = Categorizer::new(&rules);
     let mut txns = vec![Transaction {
         id: None,
         account_id: 1,

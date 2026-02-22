@@ -105,7 +105,13 @@ fn cli_import(args: &[String], db: &mut Database) -> Result<()> {
     // Auto-categorize
     let rules = db.get_import_rules()?;
     if !rules.is_empty() {
-        let categorizer = crate::categorize::Categorizer::new(&rules);
+        let (categorizer, bad_patterns) = crate::categorize::Categorizer::new(&rules);
+        if !bad_patterns.is_empty() {
+            eprintln!(
+                "Warning: invalid regex rule(s): {}",
+                bad_patterns.join(", ")
+            );
+        }
         categorizer.categorize_batch(&mut txns);
         let categorized = txns.iter().filter(|t| t.category_id.is_some()).count();
         println!("Auto-categorized {categorized}/{} transactions", txns.len());

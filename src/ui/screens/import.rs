@@ -55,14 +55,14 @@ fn render_step_indicator(f: &mut Frame, area: Rect, app: &App) {
                 .fg(theme::GREEN)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(theme::TEXT_DIM)
+            theme::dim_style()
         };
         spans.push(Span::styled(format!(" {label} "), style));
         if i < steps.len() - 1 {
             let connector_style = if i < current_idx {
                 Style::default().fg(theme::GREEN)
             } else {
-                Style::default().fg(theme::TEXT_DIM)
+                theme::dim_style()
             };
             spans.push(Span::styled(" > ", connector_style));
         }
@@ -81,17 +81,14 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
     // Path input box — shows current path + filter text when focused
     let input_focused = app.file_browser_input_focused;
     let mut spans = vec![
-        Span::styled(" Path: ", Style::default().fg(theme::TEXT_DIM)),
+        Span::styled(" Path: ", theme::dim_style()),
         Span::styled(
             app.file_browser_path.display().to_string(),
             Style::default().fg(theme::ACCENT),
         ),
     ];
     if !app.file_browser_filter.is_empty() || input_focused {
-        spans.push(Span::styled(
-            "  Filter: ",
-            Style::default().fg(theme::TEXT_DIM),
-        ));
+        spans.push(Span::styled("  Filter: ", theme::dim_style()));
         spans.push(Span::styled(
             &app.file_browser_filter,
             Style::default().fg(theme::TEXT),
@@ -112,9 +109,7 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(input_border))
             .title(Span::styled(
                 " Select CSV File ",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(path_display, chunks[0]);
@@ -210,9 +205,7 @@ fn render_column_mapper(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Column Mapping ",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(status, chunks[0]);
@@ -267,7 +260,7 @@ fn render_column_mapper(f: &mut Frame, area: Rect, app: &App) {
                 theme::normal_style()
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{label:<22}"), Style::default().fg(theme::TEXT_DIM)),
+                Span::styled(format!("{label:<22}"), theme::dim_style()),
                 Span::styled(value.as_str(), style),
             ]))
         })
@@ -340,8 +333,8 @@ fn render_select_account(f: &mut Frame, area: Rect, app: &App) {
     };
     let info = Paragraph::new(Line::from(vec![
         Span::styled(format!("  {bank_msg}"), Style::default().fg(theme::ACCENT)),
-        Span::styled("  |  ", Style::default().fg(theme::TEXT_DIM)),
-        Span::styled(type_hint, Style::default().fg(theme::TEXT_DIM)),
+        Span::styled("  |  ", theme::dim_style()),
+        Span::styled(type_hint, theme::dim_style()),
     ]))
     .block(
         Block::default()
@@ -349,9 +342,7 @@ fn render_select_account(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Select Account ",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(info, chunks[0]);
@@ -366,7 +357,7 @@ fn render_select_account(f: &mut Frame, area: Rect, app: &App) {
         let form = Paragraph::new(vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Name: ", Style::default().fg(theme::TEXT_DIM)),
+                Span::styled("  Name: ", theme::dim_style()),
                 Span::styled(
                     &app.import_new_account_name,
                     Style::default().fg(theme::TEXT),
@@ -374,19 +365,19 @@ fn render_select_account(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled("█", Style::default().fg(theme::ACCENT)),
             ]),
             Line::from(vec![
-                Span::styled("  Type: ", Style::default().fg(theme::TEXT_DIM)),
+                Span::styled("  Type: ", theme::dim_style()),
                 Span::styled(
                     type_name,
                     Style::default()
                         .fg(theme::ACCENT)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("  (+/- to change)", Style::default().fg(theme::TEXT_DIM)),
+                Span::styled("  (+/- to change)", theme::dim_style()),
             ]),
             Line::from(""),
             Line::from(Span::styled(
                 "  Enter to create, Esc to cancel",
-                Style::default().fg(theme::TEXT_DIM),
+                theme::dim_style(),
             )),
         ])
         .block(
@@ -510,7 +501,7 @@ fn render_categorize(f: &mut Frame, area: Rect, app: &App) {
 
     let desc_block = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled("  Description: ", Style::default().fg(theme::TEXT_DIM)),
+            Span::styled("  Description: ", theme::dim_style()),
             Span::styled(
                 truncate(&desc, 60),
                 Style::default()
@@ -519,11 +510,11 @@ fn render_categorize(f: &mut Frame, area: Rect, app: &App) {
             ),
         ]),
         Line::from(vec![
-            Span::styled("  Transactions: ", Style::default().fg(theme::TEXT_DIM)),
+            Span::styled("  Transactions: ", theme::dim_style()),
             Span::styled(format!("{count}"), Style::default().fg(theme::ACCENT)),
             Span::styled(
                 format!("  ({current} of {total} unique descriptions)"),
-                Style::default().fg(theme::TEXT_DIM),
+                theme::dim_style(),
             ),
         ]),
     ])

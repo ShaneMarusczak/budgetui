@@ -17,9 +17,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
             Line::from(""),
             Line::from(Span::styled(
                 "No accounts yet.",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -86,15 +84,9 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
             let neg_val = snap.month_expenses.abs();
 
             let detail_line = Line::from(vec![
-                Span::styled(
-                    format!("  {pos_label}: "),
-                    Style::default().fg(theme::TEXT_DIM),
-                ),
+                Span::styled(format!("  {pos_label}: "), theme::dim_style()),
                 Span::styled(format_amount(pos_val), Style::default().fg(theme::GREEN)),
-                Span::styled(
-                    format!("    {neg_label}: "),
-                    Style::default().fg(theme::TEXT_DIM),
-                ),
+                Span::styled(format!("    {neg_label}: "), theme::dim_style()),
                 Span::styled(format_amount(neg_val), Style::default().fg(theme::RED)),
             ]);
 
@@ -105,7 +97,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
                 theme::RED
             };
             let balance_line = Line::from(vec![
-                Span::styled("  Balance: ", Style::default().fg(theme::TEXT_DIM)),
+                Span::styled("  Balance: ", theme::dim_style()),
                 Span::styled(
                     format_amount(snap.balance),
                     Style::default().fg(bal_color).add_modifier(Modifier::BOLD),

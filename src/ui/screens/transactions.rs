@@ -45,9 +45,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Transactions (0) ",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             ));
         f.render_widget(Paragraph::new(msg).centered().block(block), area);
         return;
@@ -144,9 +142,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
                         String::new()
                     }
                 ),
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
 

@@ -92,9 +92,7 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, 
                     " Budgets for {} ",
                     app.current_month.as_deref().unwrap_or("All Time")
                 ),
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(list, area);
@@ -120,9 +118,7 @@ fn render_empty(f: &mut Frame, area: Rect) {
             .border_style(Style::default().fg(theme::OVERLAY))
             .title(Span::styled(
                 " Budgets ",
-                Style::default()
-                    .fg(theme::TEXT_DIM)
-                    .add_modifier(Modifier::BOLD),
+                theme::dim_style().add_modifier(Modifier::BOLD),
             )),
     );
     f.render_widget(msg, area);

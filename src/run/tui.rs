@@ -758,7 +758,14 @@ fn handle_confirm_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
                     }
                     PendingAction::ImportCommit => {
                         let rules = db.get_import_rules()?;
-                        let categorizer = crate::categorize::Categorizer::new(&rules);
+                        let (categorizer, bad_patterns) =
+                            crate::categorize::Categorizer::new(&rules);
+                        if !bad_patterns.is_empty() {
+                            app.set_status(format!(
+                                "Warning: invalid regex rule(s): {}",
+                                bad_patterns.join(", ")
+                            ));
+                        }
                         categorizer.categorize_batch(&mut app.import_preview);
 
                         if app.prepare_categorize_step() {

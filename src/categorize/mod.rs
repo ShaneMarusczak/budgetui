@@ -15,14 +15,23 @@ struct CompiledRule {
 }
 
 impl Categorizer {
-    pub(crate) fn new(rules: &[ImportRule]) -> Self {
+    /// Build a categorizer from import rules. Returns `(categorizer, bad_patterns)`
+    /// where `bad_patterns` lists any regex rules that failed to compile.
+    pub(crate) fn new(rules: &[ImportRule]) -> (Self, Vec<String>) {
+        let mut bad_patterns = Vec::new();
         let compiled = rules
             .iter()
             .map(|r| {
                 let regex = if r.is_regex {
                     // Lowercase the pattern so it matches against the lowercased
                     // input, consistent with the contains rule behavior
-                    Regex::new(&r.pattern.to_lowercase()).ok()
+                    match Regex::new(&r.pattern.to_lowercase()) {
+                        Ok(re) => Some(re),
+                        Err(_) => {
+                            bad_patterns.push(r.pattern.clone());
+                            None
+                        }
+                    }
                 } else {
                     None
                 };
@@ -35,7 +44,7 @@ impl Categorizer {
             })
             .collect();
 
-        Self { rules: compiled }
+        (Self { rules: compiled }, bad_patterns)
     }
 
     pub(crate) fn categorize(&self, description: &str) -> Option<i64> {

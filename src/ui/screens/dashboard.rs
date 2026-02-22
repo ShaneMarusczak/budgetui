@@ -125,9 +125,7 @@ fn render_net_worth(f: &mut Frame, area: Rect, app: &App) {
     let bar = Paragraph::new(Line::from(vec![
         Span::styled(
             " Net Worth  ",
-            Style::default()
-                .fg(theme::TEXT_DIM)
-                .add_modifier(Modifier::BOLD),
+            theme::dim_style().add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             display,
@@ -157,9 +155,7 @@ fn render_card(
         .border_style(Style::default().fg(theme::OVERLAY))
         .title(Span::styled(
             format!(" {group}: {title} "),
-            Style::default()
-                .fg(theme::TEXT_DIM)
-                .add_modifier(Modifier::BOLD),
+            theme::dim_style().add_modifier(Modifier::BOLD),
         ));
 
     let text = Paragraph::new(vec![
@@ -181,9 +177,7 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
         .border_style(Style::default().fg(theme::OVERLAY))
         .title(Span::styled(
             " Spending by Category ",
-            Style::default()
-                .fg(theme::TEXT_DIM)
-                .add_modifier(Modifier::BOLD),
+            theme::dim_style().add_modifier(Modifier::BOLD),
         ));
 
     if app.spending_by_category.is_empty() {
@@ -283,9 +277,7 @@ fn render_trend_chart(f: &mut Frame, area: Rect, app: &App) {
         .border_style(Style::default().fg(theme::OVERLAY))
         .title(Span::styled(
             " Monthly Spending Trend ",
-            Style::default()
-                .fg(theme::TEXT_DIM)
-                .add_modifier(Modifier::BOLD),
+            theme::dim_style().add_modifier(Modifier::BOLD),
         ));
 
     if app.monthly_trend.is_empty() {
@@ -343,10 +335,7 @@ fn render_trend_chart(f: &mut Frame, area: Rect, app: &App) {
             Bar::default()
                 .value(val)
                 .text_value(String::new())
-                .label(Line::from(Span::styled(
-                    label,
-                    Style::default().fg(theme::TEXT_DIM),
-                )))
+                .label(Line::from(Span::styled(label, theme::dim_style())))
                 .style(Style::default().fg(theme::ACCENT))
         })
         .collect();
@@ -365,7 +354,8 @@ fn parse_month_label(month_str: &str) -> &'static str {
     month_str
         .get(5..7)
         .and_then(|m| m.parse::<usize>().ok())
-        .and_then(|m| MONTHS.get(m.wrapping_sub(1)))
+        .and_then(|m| m.checked_sub(1))
+        .and_then(|i| MONTHS.get(i))
         .copied()
         .unwrap_or("?")
 }
