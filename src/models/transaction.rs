@@ -25,6 +25,7 @@ impl Transaction {
         self.amount < Decimal::ZERO
     }
 
+    #[cfg(test)]
     pub fn abs_amount(&self) -> Decimal {
         self.amount.abs()
     }

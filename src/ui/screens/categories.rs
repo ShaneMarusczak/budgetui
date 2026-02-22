@@ -21,7 +21,44 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
-    let cat_rows = area.height.saturating_sub(2) as usize; // minus borders
+    let border_color = if !app.category_view_rules {
+        theme::ACCENT
+    } else {
+        theme::OVERLAY
+    };
+    let title_color = if !app.category_view_rules {
+        theme::ACCENT
+    } else {
+        theme::TEXT_DIM
+    };
+
+    if app.categories.is_empty() {
+        let msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled("No categories yet", theme::dim_style())),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Add with :category <name>",
+                Style::default().fg(theme::ACCENT),
+            )),
+        ])
+        .centered()
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(Span::styled(
+                    " Categories (0) ",
+                    Style::default()
+                        .fg(title_color)
+                        .add_modifier(Modifier::BOLD),
+                )),
+        );
+        f.render_widget(msg, area);
+        return;
+    }
+
+    let cat_rows = area.height.saturating_sub(2) as usize;
     let items: Vec<ListItem> = app
         .categories
         .iter()
@@ -31,6 +68,8 @@ fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
         .map(|(i, cat)| {
             let style = if i == app.category_index {
                 theme::selected_style()
+            } else if i % 2 == 0 {
+                theme::alt_row_style()
             } else {
                 theme::normal_style()
             };
@@ -39,12 +78,6 @@ fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let border_color = if !app.category_view_rules {
-        theme::ACCENT
-    } else {
-        theme::OVERLAY
-    };
-
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
@@ -52,11 +85,7 @@ fn render_category_list(f: &mut Frame, area: Rect, app: &App) {
             .title(Span::styled(
                 format!(" Categories ({}) ", app.categories.len()),
                 Style::default()
-                    .fg(if !app.category_view_rules {
-                        theme::ACCENT
-                    } else {
-                        theme::TEXT_DIM
-                    })
+                    .fg(title_color)
                     .add_modifier(Modifier::BOLD),
             )),
     );

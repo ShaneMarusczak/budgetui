@@ -284,7 +284,7 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  :nav             Screen navigator       Ctrl-q     Quit",
+            "  :nav             Screen navigator       Ctrl-q/c   Quit",
             theme::normal_style(),
         )),
         Line::from(""),
@@ -311,7 +311,11 @@ fn render_help_overlay(f: &mut Frame, area: Rect) {
             theme::normal_style(),
         )),
         Line::from(Span::styled(
-            "  +/- (Import)    Adjust field value",
+            "  a-z (Import)    Jump to category        . (Import)     Toggle dotfiles",
+            theme::normal_style(),
+        )),
+        Line::from(Span::styled(
+            "  +/- (Import)    Adjust field value      Ctrl-u/w (:)   Clear/del word",
             theme::normal_style(),
         )),
         Line::from(""),

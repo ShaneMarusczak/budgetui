@@ -11,6 +11,7 @@ use rust_decimal::Decimal;
 use crate::models::Category;
 use crate::ui::app::App;
 use crate::ui::theme;
+use crate::ui::util::{format_amount, truncate};
 
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, Decimal)]) {
     if app.budgets.is_empty() {
@@ -54,16 +55,23 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App, spending: &[(String, 
 
             let style = if i == app.budget_index {
                 theme::selected_style()
+            } else if i % 2 == 0 {
+                theme::alt_row_style()
             } else {
                 theme::normal_style()
             };
 
             let bar = create_progress_bar(ratio, 20);
+            let display_name = truncate(cat_name, 17);
 
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{cat_name:<18}"), style),
+                Span::styled(format!("{display_name:<18}"), style),
                 Span::styled(
-                    format!("${:.0}/{:.0} ", spent, budget.limit_amount),
+                    format!(
+                        "{}/{} ",
+                        format_amount(spent),
+                        format_amount(budget.limit_amount)
+                    ),
                     Style::default().fg(color),
                 ),
                 Span::styled(bar, Style::default().fg(color)),

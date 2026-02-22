@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 
 use crate::ui::app::App;
 use crate::ui::theme;
+use crate::ui::util::format_amount;
 
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.account_snapshots.is_empty() {
@@ -89,20 +90,15 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
                     format!("  {pos_label}: "),
                     Style::default().fg(theme::TEXT_DIM),
                 ),
-                Span::styled(format!("${pos_val:.2}"), Style::default().fg(theme::GREEN)),
+                Span::styled(format_amount(pos_val), Style::default().fg(theme::GREEN)),
                 Span::styled(
                     format!("    {neg_label}: "),
                     Style::default().fg(theme::TEXT_DIM),
                 ),
-                Span::styled(format!("${neg_val:.2}"), Style::default().fg(theme::RED)),
+                Span::styled(format_amount(neg_val), Style::default().fg(theme::RED)),
             ]);
 
             // Line 3: balance
-            let bal_sign = if snap.balance < Decimal::ZERO {
-                "-"
-            } else {
-                ""
-            };
             let bal_color = if snap.balance >= Decimal::ZERO {
                 theme::GREEN
             } else {
@@ -111,14 +107,15 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
             let balance_line = Line::from(vec![
                 Span::styled("  Balance: ", Style::default().fg(theme::TEXT_DIM)),
                 Span::styled(
-                    format!("{bal_sign}${:.2}", snap.balance.abs()),
+                    format_amount(snap.balance),
                     Style::default().fg(bal_color).add_modifier(Modifier::BOLD),
                 ),
             ]);
 
-            // Line 4: bottom border
+            // Line 4: bottom border (dynamic width)
+            let border_width = (area.width as usize).saturating_sub(3);
             let bottom_line = Line::from(Span::styled(
-                "└─────────────────────────────────────────",
+                format!("└{}", "─".repeat(border_width)),
                 Style::default().fg(border_color),
             ));
 

@@ -101,7 +101,9 @@ fn handle_normal_input(key: event::KeyEvent, app: &mut App, db: &mut Database) -
             app.input_mode = InputMode::Search;
             app.search_input.clear();
         }
-        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char('q') | KeyCode::Char('c')
+            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             app.running = false;
         }
         KeyCode::Char('j') | KeyCode::Down => handle_move_down(app),
@@ -595,6 +597,19 @@ fn handle_command_input(key: event::KeyEvent, app: &mut App, db: &mut Database) 
                 app.input_mode = InputMode::Normal;
             }
         }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.command_input.clear();
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let trimmed = app.command_input.trim_end();
+            if let Some(pos) = trimmed.rfind(' ') {
+                app.command_input.truncate(pos + 1);
+            } else {
+                app.command_input.clear();
+                app.input_mode = InputMode::Normal;
+            }
+        }
         KeyCode::Char(c) => {
             app.command_input.push(c);
         }
@@ -795,6 +810,7 @@ fn switch_screen(app: &mut App, db: &mut Database, screen: Screen) -> Result<()>
         Screen::Categories => app.refresh_categories(db)?,
         Screen::Budgets => app.refresh_budgets(db)?,
     }
+    app.set_status(format!("{screen}"));
     Ok(())
 }
 

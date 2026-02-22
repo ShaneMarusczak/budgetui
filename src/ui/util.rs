@@ -1,3 +1,29 @@
+use rust_decimal::Decimal;
+
+/// Format a decimal amount with thousand separators and 2 decimal places.
+/// e.g. `1234567.89` → `"1,234,567.89"`
+pub(crate) fn format_amount(val: Decimal) -> String {
+    let abs = val.abs();
+    let formatted = format!("{abs:.2}");
+    let mut parts = formatted.split('.');
+    let int_part = parts.next().unwrap_or("0");
+    let dec_part = parts.next().unwrap_or("00");
+
+    let with_commas: String = int_part
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .map(|chunk| std::str::from_utf8(chunk).unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    if val < Decimal::ZERO {
+        format!("-${with_commas}.{dec_part}")
+    } else {
+        format!("${with_commas}.{dec_part}")
+    }
+}
+
 /// Truncate a string to `max` visible characters, appending "…" if truncated.
 /// The result is guaranteed to be at most `max` characters (counting "…" as one).
 /// Safe for multi-byte UTF-8 characters.

@@ -9,7 +9,7 @@ use ratatui::{
 use crate::models::Category;
 use crate::ui::app::App;
 use crate::ui::theme;
-use crate::ui::util::truncate;
+use crate::ui::util::{format_amount, truncate};
 
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.transactions.is_empty() {
@@ -84,8 +84,11 @@ pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
                 theme::expense_style()
             };
 
-            let sign = if txn.is_income() { "+" } else { "" };
-            let amount_str = format!("{sign}${:.2}", txn.abs_amount());
+            let amount_str = if txn.is_income() {
+                format!("+{}", format_amount(txn.amount))
+            } else {
+                format_amount(txn.amount)
+            };
 
             let date_cell = if is_selected {
                 format!("\u{2022} {}", txn.date)

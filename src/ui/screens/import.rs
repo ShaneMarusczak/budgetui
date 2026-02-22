@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::ui::app::{App, ImportStep};
 use crate::ui::theme;
-use crate::ui::util::truncate;
+use crate::ui::util::{format_amount, truncate};
 
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
@@ -163,7 +163,16 @@ fn render_file_browser(f: &mut Frame, area: Rect, app: &App) {
     } else {
         " . show dotfiles"
     };
-    let list = List::new(items).block(
+
+    let mut display_items = items;
+    if filtered.is_empty() {
+        display_items.push(ListItem::new(Line::from(Span::styled(
+            "  No matching files",
+            theme::dim_style(),
+        ))));
+    }
+
+    let list = List::new(display_items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(list_border))
@@ -437,15 +446,17 @@ fn render_preview(f: &mut Frame, area: Rect, app: &App) {
         .iter()
         .take(50)
         .map(|txn| {
-            let amount_style = if txn.amount >= rust_decimal::Decimal::ZERO {
+            let amount_style = if txn.amount > rust_decimal::Decimal::ZERO {
                 theme::income_style()
-            } else {
+            } else if txn.amount < rust_decimal::Decimal::ZERO {
                 theme::expense_style()
+            } else {
+                theme::normal_style()
             };
             Row::new(vec![
                 Cell::from(txn.date.as_str()),
                 Cell::from(truncate(&txn.description, 50)),
-                Cell::from(Span::styled(format!("${:.2}", txn.amount), amount_style)),
+                Cell::from(Span::styled(format_amount(txn.amount), amount_style)),
             ])
         })
         .collect();
@@ -605,7 +616,14 @@ fn render_complete(f: &mut Frame, area: Rect, app: &App) {
                     .fg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("import another file", theme::dim_style()),
+            Span::styled("import another file  ", theme::dim_style()),
+            Span::styled(
+                "1 ",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("go to Dashboard", theme::dim_style()),
         ]),
     ])
     .centered()

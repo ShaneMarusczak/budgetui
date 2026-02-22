@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 
 use crate::ui::app::App;
 use crate::ui::theme;
-use crate::ui::util::truncate;
+use crate::ui::util::{format_amount, truncate};
 
 pub(crate) fn render(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
@@ -115,12 +115,7 @@ fn render_credit_row(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_net_worth(f: &mut Frame, area: Rect, app: &App) {
-    let sign = if app.net_worth < Decimal::ZERO {
-        "-"
-    } else {
-        ""
-    };
-    let display = format!("{}${:.2}", sign, app.net_worth.abs());
+    let display = format_amount(app.net_worth);
     let color = if app.net_worth >= Decimal::ZERO {
         theme::GREEN
     } else {
@@ -155,8 +150,7 @@ fn render_card(
     amount: Decimal,
     color: ratatui::style::Color,
 ) {
-    let sign = if amount < Decimal::ZERO { "-" } else { "" };
-    let display = format!("{}${:.2}", sign, amount.abs());
+    let display = format_amount(amount);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -247,7 +241,7 @@ fn render_spending_chart(f: &mut Frame, area: Rect, app: &App) {
         } else {
             0
         };
-        let amount_str = format!("${:.2}", amt);
+        let amount_str = format_amount(*amt);
 
         // Right-align the label
         let padded_label = format!("{:>width$}", name, width = label_width);
